@@ -1,27 +1,12 @@
 #include "estructuras.h"
 #include "listas.h"
+#include "modulo2.h"
 
- //Cuando el equipo integre sus modulos, reemplazar los stubs
- //de abajo con las implementaciones reales.
- * ─────────────────────────────────────────────────────────── */
-void menuConfigProcesos(Proceso **listaProcesos);
-void menuListaEjecucion(Proceso **listaProcesos, Proceso **colaEjecucion);
 void menuConfigSO(ConfigSO *config, Marco **listaMarcos, Pagina **listaPaginas,
                   Proceso *listaProcesos);
 void menuEmularMMU(Proceso *colaEjecucion, Marco **listaMarcos,
                    Pagina **listaPaginas, ConfigSO *config);
 
- //Borrar cuando cada integrante entregue su modulo real.
-void menuConfigProcesos(Proceso **lp) {
-    (void)lp;
-    printf("\n  [Modulo 2 pendiente - Integrante 2]\n");
-    printf("  Presione Enter..."); getchar(); getchar();
-}
-void menuListaEjecucion(Proceso **lp, Proceso **ce) {
-    (void)lp; (void)ce;
-    printf("\n  [Modulo 2 pendiente - Integrante 2]\n");
-    printf("  Presione Enter..."); getchar(); getchar();
-}
 void menuConfigSO(ConfigSO *c, Marco **lm, Pagina **lpag, Proceso *lp) {
     (void)c; (void)lm; (void)lpag; (void)lp;
     printf("\n  [Modulo 3 pendiente - Integrante 3]\n");
@@ -32,8 +17,6 @@ void menuEmularMMU(Proceso *ce, Marco **lm, Pagina **lpag, ConfigSO *c) {
     printf("\n  [Modulo 4 pendiente - Integrante 4]\n");
     printf("  Presione Enter..."); getchar(); getchar();
 }
-
-
 
 void limpiarPantalla(void) {
 #ifdef _WIN32
@@ -51,8 +34,7 @@ void imprimirBienvenida(void) {
     printf("  +====================================================+\n\n");
 }
 
-void imprimirEstadoSistema(Proceso *procs, ConfigSO *cfg,
-                            Proceso *cola) {
+void imprimirEstadoSistema(Proceso *procs, ConfigSO *cfg, Proceso *cola) {
     printf("  Estado del sistema:\n");
     printf("    Procesos registrados : %d\n", contarProcesos(procs));
     printf("    Cola de ejecucion    : %s\n",
@@ -101,14 +83,14 @@ int validarSistema(Proceso *cola, ConfigSO *cfg, Marco *marcos) {
     return ok;
 }
 
-
-int main(void) {
+int main(void)
+{
     Proceso  *listaProcesos = NULL;
     Proceso  *colaEjecucion = NULL;
     Pagina   *listaPaginas  = NULL;
     Marco    *listaMarcos   = NULL;
     ConfigSO  configSO;
-    iniciarConfigSO(&configSO);      
+    iniciarConfigSO(&configSO);
 
     int opcion = 0;
     int salir  = 0;
@@ -126,49 +108,45 @@ int main(void) {
 
         switch (opcion) {
 
-            case 1:
-                limpiarPantalla();
-                printf("\n  === CONFIGURACION DE PROGRAMAS ===\n\n");
-                menuConfigProcesos(&listaProcesos);
-                break;
+        case 1:
+            limpiarPantalla();
+            menuConfigProcesos(&listaProcesos);
+            break;
 
-            case 2:
-                limpiarPantalla();
-                printf("\n  === LISTA DE EJECUCION ===\n\n");
-                if (!listaProcesos) {
-                    printf("  [!] Primero registre procesos (opcion 1).\n\n");
-                    printf("  Presione Enter..."); getchar(); getchar();
-                } else {
-                    menuListaEjecucion(&listaProcesos, &colaEjecucion);
-                }
-                break;
-
-            case 3:
-                limpiarPantalla();
-                printf("\n  === CONFIGURACION DEL SISTEMA OPERATIVO ===\n\n");
-                menuConfigSO(&configSO, &listaMarcos,
-                             &listaPaginas, listaProcesos);
-                break;
-
-            case 4:
-                limpiarPantalla();
-                printf("\n  === EMULACION MMU ===\n\n");
-                if (validarSistema(colaEjecucion, &configSO, listaMarcos))
-                    menuEmularMMU(colaEjecucion, &listaMarcos,
-                                  &listaPaginas, &configSO);
-                else {
-                    printf("\n  Presione Enter..."); getchar(); getchar();
-                }
-                break;
-
-            case 5:
-                salir = 1;
-                break;
-
-            default:
-                printf("\n  [!] Opcion invalida. Ingrese 1-5.\n");
+        case 2:
+            limpiarPantalla();
+            if (!listaProcesos) {
+                printf("  [!] Primero registre procesos (opcion 1).\n\n");
                 printf("  Presione Enter..."); getchar(); getchar();
-                break;
+            } else {
+                menuListaEjecucion(listaProcesos, &colaEjecucion);
+            }
+            break;
+
+        case 3:
+            limpiarPantalla();
+            menuConfigSO(&configSO, &listaMarcos,
+                         &listaPaginas, listaProcesos);
+            break;
+
+        case 4:
+            limpiarPantalla();
+            if (validarSistema(colaEjecucion, &configSO, listaMarcos))
+                menuEmularMMU(colaEjecucion, &listaMarcos,
+                              &listaPaginas, &configSO);
+            else {
+                printf("\n  Presione Enter..."); getchar(); getchar();
+            }
+            break;
+
+        case 5:
+            salir = 1;
+            break;
+
+        default:
+            printf("\n  [!] Opcion invalida. Ingrese 1-5.\n");
+            printf("  Presione Enter..."); getchar(); getchar();
+            break;
         }
     }
 
@@ -178,7 +156,6 @@ int main(void) {
     liberarListaMarcos(&listaMarcos);
 
     limpiarPantalla();
-    printf("\n  Proyecto MMU — UNITEC-CEUTEC. Hasta luego.\n\n");
+    printf("\n  Proyecto MMU - UNITEC-CEUTEC. Hasta luego.\n\n");
     return 0;
 }
-
