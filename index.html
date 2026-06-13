@@ -1,0 +1,2226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema MMU — Emulador de Memoria Virtual</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       RESET Y VARIABLES GLOBALES
+    ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary:    #0f172a;
+      --bg-secondary:  #1e293b;
+      --bg-card:       #1e293b;
+      --bg-row-alt:    #1a2540;
+      --bg-input:      #0f1f38;
+      --border:        #334155;
+      --border-light:  #475569;
+      --text-primary:  #e2e8f0;
+      --text-muted:    #94a3b8;
+      --text-dim:      #64748b;
+      --accent:        #3b82f6;
+      --accent-hover:  #2563eb;
+      --accent-glow:   rgba(59,130,246,0.18);
+      --success:       #22c55e;
+      --success-bg:    rgba(34,197,94,0.12);
+      --danger:        #ef4444;
+      --danger-bg:     rgba(239,68,68,0.12);
+      --warning:       #f59e0b;
+      --warning-bg:    rgba(245,158,11,0.12);
+      --sidebar-w:     240px;
+      --radius:        10px;
+      --radius-sm:     6px;
+      --shadow:        0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    /* ============================================================
+       LAYOUT PRINCIPAL
+    ============================================================ */
+    #app {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* ============================================================
+       BARRA LATERAL
+    ============================================================ */
+    #sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      box-shadow: var(--shadow);
+      z-index: 10;
+    }
+
+    #sidebar-header {
+      padding: 22px 18px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #sidebar-header h1 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      line-height: 1.4;
+    }
+
+    #sidebar-header p {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      letter-spacing: 0.04em;
+    }
+
+    #sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 10px;
+      flex: 1;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      transition: background 0.18s, color 0.18s, transform 0.12s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-btn::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 0 3px 3px 0;
+      opacity: 0;
+      transition: opacity 0.18s;
+    }
+
+    .nav-btn:hover {
+      background: var(--accent-glow);
+      color: var(--text-primary);
+    }
+
+    .nav-btn.activo {
+      background: var(--accent-glow);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .nav-btn.activo::before { opacity: 1; }
+
+    .nav-btn .nav-icon { font-size: 16px; }
+
+    #sidebar-footer {
+      padding: 14px 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    /* ============================================================
+       PANEL PRINCIPAL
+    ============================================================ */
+    #main {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 28px 32px;
+      background: var(--bg-primary);
+    }
+
+    /* Scrollbar */
+    #main::-webkit-scrollbar { width: 7px; }
+    #main::-webkit-scrollbar-track { background: var(--bg-primary); }
+    #main::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
+
+    /* ============================================================
+       PANELES DE MÓDULO
+    ============================================================ */
+    .panel { display: none; animation: fadeIn 0.25s ease; }
+    .panel.activo { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ============================================================
+       TIPOGRAFÍA DE SECCIÓN
+    ============================================================ */
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .page-title .icon { font-size: 22px; }
+
+    .page-subtitle {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 24px;
+    }
+
+    /* ============================================================
+       CARDS / SECCIONES
+    ============================================================ */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ============================================================
+       FORMULARIOS
+    ============================================================ */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+    .form-group label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .form-group input,
+    .form-group select {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .form-group select option { background: var(--bg-secondary); }
+
+    /* ============================================================
+       BOTONES
+    ============================================================ */
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 14px var(--accent-glow); }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+    .btn-success:hover { background: #16a34a; box-shadow: 0 0 14px rgba(34,197,94,0.3); }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+    .btn-danger:hover { background: #dc2626; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border-light);
+      color: var(--text-muted);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+    .btn-warning {
+      background: var(--warning);
+      color: #000;
+    }
+    .btn-warning:hover { background: #d97706; }
+
+    /* ============================================================
+       TABLAS
+    ============================================================ */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead th {
+      background: #162032;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      padding: 10px 14px;
+      text-align: left;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+
+    tbody tr:nth-child(even) { background: var(--bg-row-alt); }
+
+    tbody tr:hover { background: rgba(59,130,246,0.07); }
+
+    tbody tr.seleccionado { background: rgba(59,130,246,0.15) !important; }
+
+    tbody td {
+      padding: 9px 14px;
+      color: var(--text-primary);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    /* ============================================================
+       BADGES DE ESTADO
+    ============================================================ */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-listo    { background: rgba(59,130,246,0.18); color: #93c5fd; }
+    .badge-activo   { background: var(--success-bg); color: #86efac; }
+    .badge-finaliz  { background: rgba(100,116,139,0.2); color: var(--text-muted); }
+    .badge-hit      { background: var(--success-bg); color: var(--success); }
+    .badge-fault    { background: var(--danger-bg); color: var(--danger); }
+    .badge-mejor    { background: var(--success-bg); color: var(--success); font-size: 10px; }
+    .badge-peor     { background: var(--danger-bg); color: var(--danger); font-size: 10px; }
+
+    /* ============================================================
+       MENSAJES DE ERROR / INFO EN UI
+    ============================================================ */
+    .msg {
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .msg.visible { display: block; }
+    .msg-error   { background: var(--danger-bg); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .msg-success { background: var(--success-bg); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+    .msg-info    { background: var(--accent-glow); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+
+    /* ============================================================
+       MÓDULO 4 — EMULACIÓN
+    ============================================================ */
+    #emu-layout {
+      display: grid;
+      grid-template-columns: 1fr 200px;
+      gap: 20px;
+    }
+
+    #emu-controles {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    #emu-tick-info {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #emu-tick-info .tick-num {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+      min-width: 60px;
+    }
+
+    #emu-tick-info .tick-data {
+      flex: 1;
+    }
+
+    #emu-tick-info .tick-pagina {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    #emu-tick-info .tick-resultado {
+      font-size: 22px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 4px 16px;
+      border-radius: var(--radius-sm);
+    }
+
+    .resultado-hit   { background: var(--success-bg); color: var(--success); }
+    .resultado-fault { background: var(--danger-bg); color: var(--danger); }
+
+    #emu-progress-bar-wrap {
+      background: var(--bg-input);
+      border-radius: 20px;
+      height: 8px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    #emu-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--success));
+      border-radius: 20px;
+      width: 0%;
+      transition: width 0.2s;
+    }
+
+    /* Tabla de marcos actual */
+    .cell-hit   { background: rgba(34,197,94,0.25) !important; color: var(--success) !important; font-weight: 700; }
+    .cell-fault { background: rgba(239,68,68,0.25) !important; color: var(--danger) !important; font-weight: 700; }
+    .cell-empty { color: var(--text-dim); font-style: italic; }
+
+    /* Panel lateral de contadores */
+    #emu-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .counter-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .counter-card .counter-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .counter-card .counter-value {
+      font-size: 32px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .counter-fallos .counter-value { color: var(--danger); }
+    .counter-hits .counter-value   { color: var(--success); }
+    .counter-efic .counter-value   { color: var(--accent); }
+
+    /* Slider de velocidad */
+    input[type="range"] {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* ============================================================
+       MÓDULO 5 — REPORTE
+    ============================================================ */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-card .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .stat-card .stat-value {
+      font-size: 26px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-primary);
+    }
+
+    #canvas-grafico {
+      display: block;
+      width: 100%;
+      height: 280px;
+      background: var(--bg-input);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    /* Fila mejor/peor en tabla comparativa */
+    .fila-mejor td { background: rgba(34,197,94,0.08) !important; }
+    .fila-peor  td { background: rgba(239,68,68,0.08) !important; }
+
+    /* ============================================================
+       MISC UTILS
+    ============================================================ */
+    .hidden { display: none !important; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    .separator {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    .info-label {
+      display: inline-block;
+      background: var(--accent-glow);
+      border: 1px solid rgba(59,130,246,0.3);
+      color: #93c5fd;
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 14px;
+    }
+
+    /* Historial de ticks — tabla compacta */
+    #tabla-historial td { font-size: 12px; padding: 6px 10px; }
+
+    /* Tabla de marcos actual — celdas grandes */
+    #tabla-marcos-actual th,
+    #tabla-marcos-actual td {
+      text-align: center;
+      min-width: 70px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Speed label */
+    #velocidad-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 60px;
+    }
+
+    /* Responsive mínimo */
+    @media (max-width: 900px) {
+      #emu-layout { grid-template-columns: 1fr; }
+      #sidebar { width: 200px; min-width: 200px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================================================
+       BARRA LATERAL
+  ============================================================ -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <h1>Sistema MMU</h1>
+      <p>Emulador de Memoria Virtual</p>
+    </div>
+
+    <nav id="sidebar-nav">
+      <button class="nav-btn activo" onclick="navegarA('procesos')" id="nav-procesos">
+        <span class="nav-icon">⚙️</span> Configuración de Procesos
+      </button>
+      <button class="nav-btn" onclick="navegarA('planificador')" id="nav-planificador">
+        <span class="nav-icon">📋</span> Lista de Ejecución
+      </button>
+      <button class="nav-btn" onclick="navegarA('configso')" id="nav-configso">
+        <span class="nav-icon">🖥️</span> Configuración SO
+      </button>
+      <button class="nav-btn" onclick="navegarA('emulacion')" id="nav-emulacion">
+        <span class="nav-icon">▶️</span> Emular MMU
+      </button>
+      <button class="nav-btn" onclick="navegarA('reporte')" id="nav-reporte">
+        <span class="nav-icon">📊</span> Reporte Final
+      </button>
+    </nav>
+
+    <div id="sidebar-footer">SO-I &bull; Sistemas MMU &bull; 2025</div>
+  </aside>
+
+  <!-- ============================================================
+       CONTENIDO PRINCIPAL
+  ============================================================ -->
+  <main id="main">
+
+    <!-- ===================================================
+         MÓDULO 1 — CONFIGURACIÓN DE PROCESOS (CRUD)
+    =================================================== -->
+    <section class="panel activo" id="panel-procesos">
+      <div class="page-title"><span class="icon">⚙️</span> Configuración de Procesos</div>
+      <p class="page-subtitle">Administra la lista de procesos del sistema operativo.</p>
+
+      <div id="msg-procesos" class="msg msg-error"></div>
+
+      <!-- Formulario -->
+      <div class="card">
+        <div class="card-title">📝 Datos del Proceso</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="p-id">ID</label>
+            <input type="number" id="p-id" min="1" placeholder="Ej. 1" />
+          </div>
+          <div class="form-group">
+            <label for="p-nombre">Nombre</label>
+            <input type="text" id="p-nombre" placeholder="Ej. Proceso A" />
+          </div>
+          <div class="form-group">
+            <label for="p-prioridad">Prioridad</label>
+            <input type="number" id="p-prioridad" min="1" placeholder="1 = mayor" />
+          </div>
+          <div class="form-group">
+            <label for="p-cputime">CPU Time</label>
+            <input type="number" id="p-cputime" min="1" step="0.5" placeholder="Ej. 6" />
+          </div>
+          <div class="form-group">
+            <label for="p-memoria">Páginas</label>
+            <input type="number" id="p-memoria" min="1" placeholder="Mín. 1" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="agregarProceso()">➕ Agregar Proceso</button>
+          <button class="btn btn-ghost" onclick="editarProceso()">✏️ Editar Seleccionado</button>
+          <button class="btn btn-danger" onclick="eliminarProceso()">🗑️ Eliminar Seleccionado</button>
+          <button class="btn btn-ghost" onclick="limpiarFormProceso()">✖ Limpiar</button>
+        </div>
+      </div>
+
+      <!-- Tabla de procesos -->
+      <div class="card">
+        <div class="card-title">📋 Lista de Procesos <span id="badge-total" style="font-size:12px;background:var(--accent-glow);color:var(--accent);padding:2px 8px;border-radius:20px;font-weight:500;"></span></div>
+        <div class="table-wrap">
+          <table id="tabla-procesos">
+            <thead>
+              <tr>
+                <th>ID</th><th>Nombre</th><th>Estado</th><th>Prioridad</th><th>CPU Time</th><th>Páginas</th><th>Activo</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-procesos">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px">Sin procesos registrados</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         MÓDULO 2 — LISTA DE EJECUCIÓN (PLANIFICADOR)
+    =================================================== -->
+    <section class="panel" id="panel-planificador">
+      <div class="page-title"><span class="icon">📋</span> Lista de Ejecución</div>
+      <p class="page-subtitle">Genera la cola de ejecución usando un algoritmo planificador.</p>
+
+      <div id="msg-planificador" class="msg msg-error"></div>
+
+      <div class="card">
+        <div class="card-title">⚡ Configuración del Planificador</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="algoritmo-plan">Algoritmo</label>
+            <select id="algoritmo-plan" onchange="toggleQuantum()">
+              <option value="FCFS">FCFS — First Come First Served</option>
+              <option value="RR">Round Robin</option>
+              <option value="SJF">SJF — Shortest Job First</option>
+              <option value="PRIORIDAD">Por Prioridad</option>
+            </select>
+          </div>
+          <div class="form-group" id="grupo-quantum" style="display:none">
+            <label for="quantum">Quantum (ticks)</label>
+            <input type="number" id="quantum" min="1" value="2" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="generarColaEjecucion()">🚀 Generar Cola de Ejecución</button>
+        </div>
+      </div>
+
+      <div class="card" id="card-cola" style="display:none">
+        <div class="card-title">📊 Cola de Ejecución Generada <span id="badge-cola" style="font-size:12px;background:var(--accent-glow);color:var(--accent);padding:2px 8px;border-radius:20px;font-weight:500;"></span></div>
+        <div id="info-label-plan" class="info-label"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Turno</th><th>ID</th><th>Nombre</th><th>CPU Time</th><th>Prioridad</th></tr>
+            </thead>
+            <tbody id="tbody-cola"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         MÓDULO 3 — CONFIGURACIÓN DEL SO
+    =================================================== -->
+    <section class="panel" id="panel-configso">
+      <div class="page-title"><span class="icon">🖥️</span> Configuración del SO</div>
+      <p class="page-subtitle">Define los parámetros de memoria y el algoritmo de reemplazo.</p>
+
+      <div id="msg-configso" class="msg msg-error"></div>
+      <div id="msg-configso-ok" class="msg msg-success"></div>
+
+      <div class="card">
+        <div class="card-title">💾 Parámetros de Memoria</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="so-paginas">Páginas Virtuales</label>
+            <input type="number" id="so-paginas" min="1" placeholder="Total de páginas" />
+          </div>
+          <div class="form-group">
+            <label for="so-marcos">Marcos Físicos</label>
+            <input type="number" id="so-marcos" min="1" placeholder="Marcos disponibles" />
+          </div>
+        </div>
+        <div id="so-req-label" class="info-label" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔧 Algoritmo de Reemplazo MMU</div>
+        <div class="form-group" style="max-width:320px">
+          <label for="so-algoritmo">Algoritmo MMU</label>
+          <select id="so-algoritmo">
+            <option value="FIFO">FIFO — First In First Out</option>
+            <option value="LRU">LRU — Least Recently Used</option>
+            <option value="OPT">OPT — Óptimo</option>
+            <option value="SC">Second Chance</option>
+            <option value="CLOCK">Clock</option>
+            <option value="MRU">MRU — Most Recently Used</option>
+            <option value="LFU">LFU — Least Frequently Used</option>
+          </select>
+        </div>
+        <br />
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="guardarConfigSO()">💾 Guardar Configuración</button>
+        </div>
+      </div>
+
+      <div class="card" id="card-tabla-paginas" style="display:none">
+        <div class="card-title">📄 Tabla de Páginas Inicial</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Página</th><th>Marco Asignado</th><th>Proceso</th><th>En Memoria</th></tr>
+            </thead>
+            <tbody id="tbody-tabla-paginas"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         MÓDULO 4 — EMULACIÓN
+    =================================================== -->
+    <section class="panel" id="panel-emulacion">
+      <div class="page-title"><span class="icon">▶️</span> Emular MMU</div>
+      <p class="page-subtitle">Visualiza el reemplazo de páginas tick a tick.</p>
+
+      <div id="msg-emulacion" class="msg msg-error"></div>
+
+      <!-- Controles -->
+      <div id="emu-controles" class="card" style="margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:12px">🎮 Controles de Emulación</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-success" onclick="iniciarEmulacion()">▶ Iniciar</button>
+          <button class="btn btn-primary" onclick="pasoPaso()" id="btn-paso">⏭ Paso a Paso</button>
+          <button class="btn btn-warning" onclick="modoAutomatico()" id="btn-auto">🔁 Auto</button>
+          <button class="btn btn-ghost" onclick="reiniciarEmulacion()">🔄 Reiniciar</button>
+          <div style="display:flex;align-items:center;gap:8px;margin-left:10px">
+            <span style="font-size:12px;color:var(--text-muted)">Velocidad:</span>
+            <input type="range" id="slider-velocidad" min="100" max="2000" step="100" value="600" oninput="actualizarVelocidad()" style="width:100px" />
+            <span id="velocidad-label">600 ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info del tick actual -->
+      <div id="emu-tick-info">
+        <div class="tick-num" id="tick-num">—</div>
+        <div class="tick-data">
+          <div class="tick-pagina" id="tick-pagina">Esperando inicio de emulación...</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px" id="tick-alg">Algoritmo: —</div>
+        </div>
+        <div class="tick-resultado" id="tick-resultado">—</div>
+      </div>
+
+      <!-- Barra de progreso -->
+      <div id="emu-progress-bar-wrap">
+        <div id="emu-progress-bar"></div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:var(--text-dim);margin-bottom:16px" id="emu-progress-label">0 / 0 referencias</div>
+
+      <div id="emu-layout">
+        <!-- Panel central -->
+        <div>
+          <!-- Tabla de marcos actual -->
+          <div class="card">
+            <div class="card-title">🗂️ Estado Actual de Marcos</div>
+            <div class="table-wrap">
+              <table id="tabla-marcos-actual">
+                <thead><tr id="thead-marcos-actual"></tr></thead>
+                <tbody><tr id="trow-marcos-actual"></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Historial de ticks -->
+          <div class="card">
+            <div class="card-title">📜 Historial de Ticks</div>
+            <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tick</th><th>Página</th><th>Marco</th><th>Resultado</th><th>Estado de Marcos</th>
+                  </tr>
+                </thead>
+                <tbody id="tabla-historial"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel lateral -->
+        <div id="emu-sidebar">
+          <div class="counter-card counter-fallos">
+            <div class="counter-label">Page Faults</div>
+            <div class="counter-value" id="cnt-fallos">0</div>
+          </div>
+          <div class="counter-card counter-hits">
+            <div class="counter-label">Hits</div>
+            <div class="counter-value" id="cnt-hits">0</div>
+          </div>
+          <div class="counter-card counter-efic">
+            <div class="counter-label">Eficiencia</div>
+            <div class="counter-value" id="cnt-efic">0%</div>
+          </div>
+          <div class="counter-card" style="margin-top:8px">
+            <div class="counter-label">Algoritmo</div>
+            <div style="font-size:14px;font-weight:700;color:var(--accent);margin-top:4px" id="cnt-alg">—</div>
+          </div>
+          <div class="counter-card">
+            <div class="counter-label">Referencias</div>
+            <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-top:4px" id="cnt-refs">0 total</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         MÓDULO 5 — REPORTE FINAL
+    =================================================== -->
+    <section class="panel" id="panel-reporte">
+      <div class="page-title"><span class="icon">📊</span> Reporte Final</div>
+      <p class="page-subtitle">Análisis de rendimiento del algoritmo de reemplazo utilizado.</p>
+
+      <div id="msg-reporte" class="msg msg-error"></div>
+
+      <!-- Resumen del algoritmo -->
+      <div class="card" id="card-resumen-alg">
+        <div class="card-title">🏆 Resumen del Algoritmo Ejecutado</div>
+        <div class="stats-grid" id="stats-resumen"></div>
+      </div>
+
+      <!-- Botón comparar -->
+      <div class="btn-row" style="margin-bottom:20px">
+        <button class="btn btn-primary" onclick="compararAlgoritmos()">🔬 Comparar Todos los Algoritmos</button>
+        <button class="btn btn-ghost" onclick="exportarReporte()">📥 Exportar Reporte (.txt)</button>
+      </div>
+
+      <!-- Tabla comparativa -->
+      <div class="card" id="card-comparativa" style="display:none">
+        <div class="card-title">📊 Tabla Comparativa — 7 Algoritmos</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Algoritmo</th><th>Fallos</th><th>Hits</th><th>Tasa de Fallos</th><th>Eficiencia</th><th>Rank</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-comparativa"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Gráfico de barras -->
+      <div class="card" id="card-grafico" style="display:none">
+        <div class="card-title">📈 Gráfico Comparativo — Page Faults</div>
+        <canvas id="canvas-grafico"></canvas>
+      </div>
+    </section>
+
+  </main><!-- /main -->
+</div><!-- /app -->
+
+<script>
+/* ================================================================
+   ESTADO GLOBAL DEL SISTEMA
+================================================================ */
+
+// Estado central que comparten todos los módulos
+const estado = {
+  procesos: [],           // lista de objetos proceso
+  procesoSeleccionado: null, // índice del proceso seleccionado en tabla
+  colaEjecucion: [],      // orden planificado con info de turno
+  config: {
+    paginasVirtuales: 0,
+    marcasFisicos: 0,
+    algoritmoMMU: 'FIFO'
+  },
+  secuenciaReferencias: [],
+  resultadoEmulacion: null,  // resultado del algoritmo ejecutado
+  // Variables de emulación en curso
+  emulacion: {
+    activa: false,
+    tick: 0,
+    intervalo: null,
+    velocidad: 600,
+    estadosPorTick: [],
+    marcoAfectado: [],
+    resultados: [],     // HIT o FAULT por tick
+    marcosEstado: [],   // estado de marcos en cada tick
+  }
+};
+
+/* ================================================================
+   NAVEGACIÓN ENTRE PANELES
+================================================================ */
+
+// Cambia el panel visible y resalta el botón activo en la barra lateral
+function navegarA(modulo) {
+  // Ocultar todos los paneles
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('activo'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('activo'));
+
+  // Mostrar el panel seleccionado
+  const panel = document.getElementById('panel-' + modulo);
+  if (panel) panel.classList.add('activo');
+
+  const navBtn = document.getElementById('nav-' + modulo);
+  if (navBtn) navBtn.classList.add('activo');
+
+  // Acciones específicas al entrar en módulo
+  if (modulo === 'configso') actualizarInfoConfigSO();
+  if (modulo === 'reporte') actualizarReporte();
+}
+
+/* ================================================================
+   UTILIDADES DE UI
+================================================================ */
+
+// Muestra un mensaje de error/éxito/info en el div indicado
+function mostrarMsg(id, texto, tipo) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = texto;
+  el.className = 'msg ' + tipo + ' visible';
+}
+
+// Oculta un mensaje
+function ocultarMsg(id) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'msg';
+}
+
+// Limpia un campo de formulario y devuelve su valor
+function val(id) { return document.getElementById(id)?.value ?? ''; }
+
+/* ================================================================
+   MÓDULO 1 — PROCESOS (CRUD)
+================================================================ */
+
+// Limpia el formulario de proceso
+function limpiarFormProceso() {
+  ['p-id','p-nombre','p-prioridad','p-cputime','p-memoria'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  estado.procesoSeleccionado = null;
+  ocultarMsg('msg-procesos');
+}
+
+// Agrega un nuevo proceso a la lista
+function agregarProceso() {
+  const id        = parseInt(val('p-id'));
+  const nombre    = val('p-nombre').trim();
+  const prioridad = parseInt(val('p-prioridad'));
+  const cputime   = parseFloat(val('p-cputime'));
+  const memoria   = parseInt(val('p-memoria'));
+
+  // Validaciones
+  if (!nombre)        return mostrarMsg('msg-procesos', '⚠ El nombre no puede estar vacío.', 'msg-error');
+  if (isNaN(id) || id < 1) return mostrarMsg('msg-procesos', '⚠ El ID debe ser un número mayor a 0.', 'msg-error');
+  if (estado.procesos.find(p => p.id === id)) return mostrarMsg('msg-procesos', '⚠ Ya existe un proceso con ese ID.', 'msg-error');
+  if (isNaN(prioridad) || prioridad < 1) return mostrarMsg('msg-procesos', '⚠ La prioridad debe ser >= 1.', 'msg-error');
+  if (isNaN(cputime) || cputime <= 0)    return mostrarMsg('msg-procesos', '⚠ El CPU Time debe ser > 0.', 'msg-error');
+  if (isNaN(memoria) || memoria < 1)     return mostrarMsg('msg-procesos', '⚠ Las páginas deben ser >= 1.', 'msg-error');
+
+  // Crear objeto proceso
+  const proceso = {
+    id,
+    nombre,
+    estado: 'Listo',
+    prioridad,
+    cpu_time: cputime,
+    memoria,
+    activo: true,
+    finalizado: false
+  };
+
+  estado.procesos.push(proceso);
+  limpiarFormProceso();
+  renderTablaProcs();
+  mostrarMsg('msg-procesos', `✅ Proceso "${nombre}" agregado correctamente.`, 'msg-success');
+}
+
+// Edita el proceso actualmente seleccionado en la tabla
+function editarProceso() {
+  if (estado.procesoSeleccionado === null)
+    return mostrarMsg('msg-procesos', '⚠ Selecciona un proceso en la tabla primero.', 'msg-error');
+
+  const idx       = estado.procesoSeleccionado;
+  const id        = parseInt(val('p-id'));
+  const nombre    = val('p-nombre').trim();
+  const prioridad = parseInt(val('p-prioridad'));
+  const cputime   = parseFloat(val('p-cputime'));
+  const memoria   = parseInt(val('p-memoria'));
+
+  if (!nombre)        return mostrarMsg('msg-procesos', '⚠ El nombre no puede estar vacío.', 'msg-error');
+  if (isNaN(id) || id < 1) return mostrarMsg('msg-procesos', '⚠ ID inválido.', 'msg-error');
+  if (isNaN(prioridad) || prioridad < 1) return mostrarMsg('msg-procesos', '⚠ Prioridad inválida.', 'msg-error');
+  if (isNaN(cputime) || cputime <= 0)    return mostrarMsg('msg-procesos', '⚠ CPU Time inválido.', 'msg-error');
+  if (isNaN(memoria) || memoria < 1)     return mostrarMsg('msg-procesos', '⚠ Páginas inválidas.', 'msg-error');
+
+  // Verificar duplicado de ID (excepto el mismo proceso)
+  const dup = estado.procesos.find((p, i) => p.id === id && i !== idx);
+  if (dup) return mostrarMsg('msg-procesos', '⚠ Ese ID ya lo tiene otro proceso.', 'msg-error');
+
+  // Actualizar
+  Object.assign(estado.procesos[idx], { id, nombre, prioridad, cpu_time: cputime, memoria });
+  limpiarFormProceso();
+  renderTablaProcs();
+  mostrarMsg('msg-procesos', `✅ Proceso "${nombre}" actualizado.`, 'msg-success');
+}
+
+// Elimina el proceso seleccionado
+function eliminarProceso() {
+  if (estado.procesoSeleccionado === null)
+    return mostrarMsg('msg-procesos', '⚠ Selecciona un proceso primero.', 'msg-error');
+
+  const proc = estado.procesos[estado.procesoSeleccionado];
+  estado.procesos.splice(estado.procesoSeleccionado, 1);
+  estado.procesoSeleccionado = null;
+  limpiarFormProceso();
+  renderTablaProcs();
+  mostrarMsg('msg-procesos', `✅ Proceso "${proc.nombre}" eliminado.`, 'msg-success');
+}
+
+// Renderiza la tabla de procesos desde el array estado.procesos
+function renderTablaProcs() {
+  const tbody = document.getElementById('tbody-procesos');
+  const badge = document.getElementById('badge-total');
+  badge.textContent = estado.procesos.length + ' procesos';
+
+  if (estado.procesos.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px">Sin procesos registrados</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = estado.procesos.map((p, idx) => `
+    <tr class="${idx === estado.procesoSeleccionado ? 'seleccionado' : ''}"
+        onclick="seleccionarProceso(${idx})" style="cursor:pointer">
+      <td class="mono">${p.id}</td>
+      <td><strong>${p.nombre}</strong></td>
+      <td><span class="badge badge-listo">${p.estado}</span></td>
+      <td class="mono">${p.prioridad}</td>
+      <td class="mono">${p.cpu_time}</td>
+      <td class="mono">${p.memoria}</td>
+      <td><span class="badge ${p.activo ? 'badge-activo' : 'badge-finaliz'}">${p.activo ? 'Sí' : 'No'}</span></td>
+    </tr>
+  `).join('');
+}
+
+// Carga los datos del proceso en el formulario al hacer clic en la fila
+function seleccionarProceso(idx) {
+  estado.procesoSeleccionado = idx;
+  const p = estado.procesos[idx];
+  document.getElementById('p-id').value       = p.id;
+  document.getElementById('p-nombre').value   = p.nombre;
+  document.getElementById('p-prioridad').value= p.prioridad;
+  document.getElementById('p-cputime').value  = p.cpu_time;
+  document.getElementById('p-memoria').value  = p.memoria;
+  renderTablaProcs();
+}
+
+/* ================================================================
+   MÓDULO 2 — PLANIFICADOR
+================================================================ */
+
+// Muestra u oculta el campo de quantum según el algoritmo elegido
+function toggleQuantum() {
+  const alg = val('algoritmo-plan');
+  const grupoQ = document.getElementById('grupo-quantum');
+  grupoQ.style.display = alg === 'RR' ? '' : 'none';
+}
+
+// Genera la cola de ejecución con el algoritmo seleccionado
+function generarColaEjecucion() {
+  ocultarMsg('msg-planificador');
+
+  if (estado.procesos.length === 0)
+    return mostrarMsg('msg-planificador', '⚠ Primero agrega procesos en el módulo de Configuración.', 'msg-error');
+
+  const alg    = val('algoritmo-plan');
+  const quantum = parseInt(val('quantum')) || 2;
+
+  if (alg === 'RR' && (isNaN(quantum) || quantum < 1))
+    return mostrarMsg('msg-planificador', '⚠ El quantum debe ser >= 1.', 'msg-error');
+
+  let cola = [];
+
+  if (alg === 'FCFS') {
+    // Orden de inserción
+    cola = fcfs(estado.procesos);
+  } else if (alg === 'RR') {
+    // Round Robin con turnos de quantum
+    cola = roundRobin(estado.procesos, quantum);
+  } else if (alg === 'SJF') {
+    // Shortest Job First
+    cola = sjf(estado.procesos);
+  } else if (alg === 'PRIORIDAD') {
+    // Por prioridad ascendente
+    cola = porPrioridad(estado.procesos);
+  }
+
+  estado.colaEjecucion = cola;
+
+  // Renderizar tabla
+  const tbody = document.getElementById('tbody-cola');
+  const badge = document.getElementById('badge-cola');
+  const label = document.getElementById('info-label-plan');
+
+  badge.textContent = cola.length + ' turnos';
+  label.textContent = `Algoritmo: ${alg}${alg === 'RR' ? ' | Quantum: ' + quantum : ''}`;
+
+  tbody.innerHTML = cola.map((entrada, i) => `
+    <tr>
+      <td class="mono">${i + 1}</td>
+      <td class="mono">${entrada.proceso.id}</td>
+      <td><strong>${entrada.proceso.nombre}</strong></td>
+      <td class="mono">${entrada.proceso.cpu_time}</td>
+      <td class="mono">${entrada.proceso.prioridad}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('card-cola').style.display = '';
+}
+
+// FCFS — devuelve los procesos en orden de inserción
+function fcfs(procs) {
+  return procs.map(p => ({ proceso: p, turno: 1 }));
+}
+
+// SJF — ordena por cpu_time ascendente
+function sjf(procs) {
+  return [...procs].sort((a, b) => a.cpu_time - b.cpu_time)
+                   .map(p => ({ proceso: p, turno: 1 }));
+}
+
+// Por Prioridad — ordena por prioridad ascendente (1 = mayor)
+function porPrioridad(procs) {
+  return [...procs].sort((a, b) => a.prioridad - b.prioridad)
+                   .map(p => ({ proceso: p, turno: 1 }));
+}
+
+// Round Robin — divide cpu_time en turnos de tamaño quantum
+function roundRobin(procs, quantum) {
+  const cola = [];
+  // Creamos una cola de ready con tiempo restante
+  const ready = procs.map(p => ({ proceso: p, restante: p.cpu_time }));
+  let continua = true;
+  while (continua) {
+    continua = false;
+    for (const item of ready) {
+      if (item.restante > 0) {
+        continua = true;
+        cola.push({ proceso: item.proceso, turno: quantum });
+        item.restante -= quantum;
+      }
+    }
+  }
+  return cola;
+}
+
+/* ================================================================
+   MÓDULO 3 — CONFIGURACIÓN DEL SO
+================================================================ */
+
+// Actualiza el label de páginas requeridas al entrar al módulo
+function actualizarInfoConfigSO() {
+  const totalPags = estado.procesos.reduce((s, p) => s + p.memoria, 0);
+  const el = document.getElementById('so-req-label');
+  el.textContent = `Páginas requeridas por los procesos actuales: ${totalPags} página(s)`;
+  el.style.display = '';
+}
+
+// Guarda la configuración del SO con validaciones
+function guardarConfigSO() {
+  ocultarMsg('msg-configso');
+  ocultarMsg('msg-configso-ok');
+
+  const paginas = parseInt(val('so-paginas'));
+  const marcos  = parseInt(val('so-marcos'));
+  const alg     = val('so-algoritmo');
+
+  const totalPagsProcs = estado.procesos.reduce((s, p) => s + p.memoria, 0);
+
+  if (isNaN(paginas) || paginas < 1)
+    return mostrarMsg('msg-configso', '⚠ Las páginas virtuales deben ser >= 1.', 'msg-error');
+  if (isNaN(marcos) || marcos < 1)
+    return mostrarMsg('msg-configso', '⚠ Los marcos físicos deben ser >= 1.', 'msg-error');
+  if (marcos >= paginas)
+    return mostrarMsg('msg-configso', '⚠ Los marcos físicos deben ser MENORES que las páginas virtuales (para forzar reemplazos).', 'msg-error');
+  if (paginas < totalPagsProcs)
+    return mostrarMsg('msg-configso', `⚠ Las páginas virtuales (${paginas}) deben ser >= suma de páginas de procesos (${totalPagsProcs}).`, 'msg-error');
+
+  estado.config.paginasVirtuales = paginas;
+  estado.config.marcasFisicos    = marcos;
+  estado.config.algoritmoMMU     = alg;
+
+  mostrarMsg('msg-configso-ok', `✅ Configuración guardada: ${paginas} páginas virtuales, ${marcos} marcos físicos, algoritmo ${alg}.`, 'msg-success');
+  renderTablaPaginasInicial(paginas);
+}
+
+// Renderiza la tabla de páginas inicial (todo vacío)
+function renderTablaPaginasInicial(total) {
+  const tbody = document.getElementById('tbody-tabla-paginas');
+  let filas = '';
+  for (let i = 0; i < total; i++) {
+    filas += `<tr>
+      <td class="mono">${i}</td>
+      <td style="color:var(--text-dim)">—</td>
+      <td style="color:var(--text-dim)">—</td>
+      <td><span class="badge badge-finaliz">No</span></td>
+    </tr>`;
+  }
+  tbody.innerHTML = filas;
+  document.getElementById('card-tabla-paginas').style.display = '';
+}
+
+/* ================================================================
+   GENERACIÓN DE SECUENCIA DE REFERENCIAS
+================================================================ */
+
+/*
+  Genera la secuencia de páginas referenciadas a partir de la cola
+  de ejecución. Cada proceso tiene un offset global para que sus
+  páginas sean identificables de forma única.
+*/
+function generarSecuenciaReferencias() {
+  const cola = estado.colaEjecucion;
+  if (cola.length === 0) return [];
+
+  // Calcular offset por proceso (acumulado de páginas de procesos anteriores)
+  const offsets = {};
+  let acum = 0;
+  estado.procesos.forEach(p => {
+    offsets[p.id] = acum;
+    acum += p.memoria;
+  });
+
+  // Contador de cuántas veces apareció cada proceso en la cola (para RR)
+  const apariciones = {};
+  estado.colaEjecucion.forEach(e => {
+    apariciones[e.proceso.id] = (apariciones[e.proceso.id] || 0) + 1;
+  });
+
+  // Índice de página actual por proceso (ciclante para RR)
+  const paginaActual = {};
+
+  const secuencia = [];
+  for (const entrada of cola) {
+    const p   = entrada.proceso;
+    const off = offsets[p.id] ?? 0;
+    const N   = p.memoria;
+
+    // ¿Cuántas referencias genera este turno?
+    const totalApar = apariciones[p.id] || 1;
+    const refsTotal = Math.ceil(p.cpu_time);
+    // Páginas por turno aproximadas
+    const refsPorTurno = Math.max(1, Math.floor(refsTotal / totalApar));
+
+    // Página inicial de este turno (ciclando entre 0..N-1)
+    if (paginaActual[p.id] === undefined) paginaActual[p.id] = 0;
+
+    for (let r = 0; r < refsPorTurno; r++) {
+      const paginaLocal  = paginaActual[p.id] % N;
+      const paginaGlobal = off + paginaLocal;
+      secuencia.push(paginaGlobal);
+      paginaActual[p.id]++;
+    }
+  }
+
+  return secuencia;
+}
+
+/* ================================================================
+   MÓDULO 4 — EMULACIÓN
+================================================================ */
+
+// Inicializa la emulación (sin arrancar el timer todavía)
+function iniciarEmulacion() {
+  ocultarMsg('msg-emulacion');
+
+  // Validaciones previas
+  if (estado.procesos.length === 0)
+    return mostrarMsg('msg-emulacion', '⚠ No hay procesos. Ve al módulo de Procesos y agrega al menos uno.', 'msg-error');
+  if (estado.colaEjecucion.length === 0)
+    return mostrarMsg('msg-emulacion', '⚠ No hay cola de ejecución. Ve al módulo de Planificador y genera la cola.', 'msg-error');
+  if (estado.config.marcasFisicos === 0)
+    return mostrarMsg('msg-emulacion', '⚠ No hay configuración del SO guardada. Ve a Configuración SO.', 'msg-error');
+
+  // Detener cualquier emulación previa
+  reiniciarEmulacion(true);
+
+  // Generar secuencia de referencias
+  const secuencia = generarSecuenciaReferencias();
+  estado.secuenciaReferencias = secuencia;
+
+  if (secuencia.length === 0)
+    return mostrarMsg('msg-emulacion', '⚠ La secuencia de referencias está vacía.', 'msg-error');
+
+  // Ejecutar el algoritmo MMU
+  const resultado = ejecutarAlgoritmo(estado.config.algoritmoMMU, secuencia, estado.config.marcasFisicos);
+
+  // Guardar resultado para la emulación paso a paso
+  estado.emulacion = {
+    activa: true,
+    tick: 0,
+    intervalo: null,
+    velocidad: parseInt(val('slider-velocidad')) || 600,
+    estadosPorTick: resultado.estadosPorTick,
+    marcoAfectado: resultado.marcoAfectado,
+    resultados: resultado.resultados,
+    marcosEstado: resultado.estadosPorTick,
+  };
+  estado.resultadoEmulacion = resultado;
+
+  // Actualizar contador de referencia total
+  document.getElementById('cnt-refs').textContent = secuencia.length + ' total';
+  document.getElementById('cnt-alg').textContent  = estado.config.algoritmoMMU;
+
+  // Construir encabezado de tabla de marcos
+  construirCabeceraMarcosActual(estado.config.marcasFisicos);
+
+  // Reiniciar contadores UI
+  document.getElementById('cnt-fallos').textContent = '0';
+  document.getElementById('cnt-hits').textContent   = '0';
+  document.getElementById('cnt-efic').textContent   = '0%';
+  document.getElementById('tabla-historial').innerHTML = '';
+  document.getElementById('tick-num').textContent   = '0';
+  document.getElementById('tick-pagina').textContent = 'Listo. Usa "Paso a Paso" o "Auto".';
+  document.getElementById('tick-resultado').textContent = '—';
+  document.getElementById('tick-resultado').className   = 'tick-resultado';
+  document.getElementById('tick-alg').textContent = 'Algoritmo: ' + estado.config.algoritmoMMU;
+  actualizarProgressBar(0, secuencia.length);
+  limpiarFilaMarcosActual(estado.config.marcasFisicos);
+}
+
+// Construye la fila de encabezado de la tabla de marcos
+function construirCabeceraMarcosActual(numMarcos) {
+  const thead = document.getElementById('thead-marcos-actual');
+  const trow  = document.getElementById('trow-marcos-actual');
+  let thHTML = '';
+  let tdHTML = '';
+  for (let m = 0; m < numMarcos; m++) {
+    thHTML += `<th>Marco ${m}</th>`;
+    tdHTML += `<td id="mc-${m}" class="cell-empty">—</td>`;
+  }
+  thead.innerHTML = '<tr>' + thHTML + '</tr>';
+  trow.innerHTML  = tdHTML;
+}
+
+// Limpia las celdas de la fila actual de marcos
+function limpiarFilaMarcosActual(numMarcos) {
+  for (let m = 0; m < numMarcos; m++) {
+    const td = document.getElementById('mc-' + m);
+    if (td) { td.textContent = '—'; td.className = 'cell-empty'; }
+  }
+}
+
+// Ejecuta un tick de emulación (paso a paso)
+function ejecutarTick() {
+  const emu = estado.emulacion;
+  if (!emu.activa || emu.tick >= emu.estadosPorTick.length) {
+    // Emulación terminada
+    if (emu.intervalo) { clearInterval(emu.intervalo); emu.intervalo = null; }
+    mostrarMsg('msg-emulacion', '✅ Emulación finalizada. Ve al Reporte Final para ver el análisis completo.', 'msg-success');
+    // Ir a reporte automáticamente
+    setTimeout(() => navegarA('reporte'), 1200);
+    return;
+  }
+
+  const tick = emu.tick;
+  const pagina      = estado.secuenciaReferencias[tick];
+  const marcosSnap  = emu.estadosPorTick[tick];
+  const marcoAf     = emu.marcoAfectado[tick];
+  const esFault     = emu.resultados[tick] === 'FAULT';
+
+  // Actualizar UI del tick actual
+  document.getElementById('tick-num').textContent    = tick + 1;
+  document.getElementById('tick-pagina').textContent = `Página referenciada: ${pagina}`;
+
+  const resEl = document.getElementById('tick-resultado');
+  resEl.textContent = esFault ? 'PAGE FAULT' : 'HIT';
+  resEl.className   = 'tick-resultado ' + (esFault ? 'resultado-fault' : 'resultado-hit');
+
+  // Actualizar tabla de marcos actual
+  const numMarcos = estado.config.marcasFisicos;
+  for (let m = 0; m < numMarcos; m++) {
+    const td = document.getElementById('mc-' + m);
+    if (!td) continue;
+    const pag = marcosSnap[m];
+    if (pag === -1 || pag === undefined) {
+      td.textContent = '—';
+      td.className   = 'cell-empty';
+    } else {
+      td.textContent = 'P' + pag;
+      td.className   = '';
+    }
+  }
+  // Resaltar celda del marco afectado
+  if (marcoAf >= 0) {
+    const tdAf = document.getElementById('mc-' + marcoAf);
+    if (tdAf) {
+      tdAf.className = esFault ? 'cell-fault' : 'cell-hit';
+      // Volver al color normal después de 500ms
+      setTimeout(() => {
+        if (tdAf) tdAf.className = '';
+      }, 500);
+    }
+  }
+
+  // Contadores acumulados
+  let fallos = 0, hits = 0;
+  for (let i = 0; i <= tick; i++) {
+    if (emu.resultados[i] === 'FAULT') fallos++;
+    else hits++;
+  }
+  document.getElementById('cnt-fallos').textContent = fallos;
+  document.getElementById('cnt-hits').textContent   = hits;
+  const efic = ((hits / (tick + 1)) * 100).toFixed(1);
+  document.getElementById('cnt-efic').textContent   = efic + '%';
+
+  // Barra de progreso
+  actualizarProgressBar(tick + 1, emu.estadosPorTick.length);
+
+  // Agregar fila al historial
+  const tbody = document.getElementById('tabla-historial');
+  const snap  = marcosSnap.map(p => p === -1 ? '—' : 'P' + p).join(' | ');
+  const fila = document.createElement('tr');
+  fila.innerHTML = `
+    <td class="mono">${tick + 1}</td>
+    <td class="mono">${pagina}</td>
+    <td class="mono">${marcoAf >= 0 ? marcoAf : '—'}</td>
+    <td><span class="badge ${esFault ? 'badge-fault' : 'badge-hit'}">${esFault ? 'FAULT' : 'HIT'}</span></td>
+    <td class="mono" style="font-size:11px">${snap}</td>
+  `;
+  tbody.appendChild(fila);
+  // Auto-scroll del historial
+  const wrap = tbody.closest('.table-wrap') || tbody.parentElement.parentElement;
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
+
+  emu.tick++;
+}
+
+// Avanza un solo tick manualmente
+function pasoPaso() {
+  if (!estado.emulacion.activa)
+    return mostrarMsg('msg-emulacion', '⚠ Primero presiona "Iniciar".', 'msg-error');
+  ejecutarTick();
+}
+
+// Activa o pausa el modo automático con setInterval
+function modoAutomatico() {
+  const emu = estado.emulacion;
+  if (!emu.activa)
+    return mostrarMsg('msg-emulacion', '⚠ Primero presiona "Iniciar".', 'msg-error');
+
+  if (emu.intervalo) {
+    // Pausar
+    clearInterval(emu.intervalo);
+    emu.intervalo = null;
+    document.getElementById('btn-auto').textContent = '🔁 Auto';
+  } else {
+    // Arrancar
+    emu.intervalo = setInterval(() => {
+      if (emu.tick >= emu.estadosPorTick.length) {
+        clearInterval(emu.intervalo);
+        emu.intervalo = null;
+        document.getElementById('btn-auto').textContent = '🔁 Auto';
+      } else {
+        ejecutarTick();
+      }
+    }, emu.velocidad);
+    document.getElementById('btn-auto').textContent = '⏸ Pausar';
+  }
+}
+
+// Reinicia el estado de la emulación
+function reiniciarEmulacion(silencioso) {
+  const emu = estado.emulacion;
+  if (emu.intervalo) { clearInterval(emu.intervalo); emu.intervalo = null; }
+  emu.activa = false;
+  emu.tick   = 0;
+  document.getElementById('btn-auto').textContent = '🔁 Auto';
+  if (!silencioso) {
+    document.getElementById('tick-num').textContent    = '—';
+    document.getElementById('tick-pagina').textContent = 'Esperando inicio de emulación...';
+    document.getElementById('tick-resultado').textContent = '—';
+    document.getElementById('tick-resultado').className = 'tick-resultado';
+    document.getElementById('cnt-fallos').textContent = '0';
+    document.getElementById('cnt-hits').textContent   = '0';
+    document.getElementById('cnt-efic').textContent   = '0%';
+    document.getElementById('tabla-historial').innerHTML = '';
+    actualizarProgressBar(0, 0);
+    ocultarMsg('msg-emulacion');
+  }
+}
+
+// Actualiza la velocidad del intervalo desde el slider
+function actualizarVelocidad() {
+  const v = parseInt(val('slider-velocidad'));
+  document.getElementById('velocidad-label').textContent = v + ' ms';
+  estado.emulacion.velocidad = v;
+  // Si ya está en modo auto, reiniciar intervalo con nueva velocidad
+  if (estado.emulacion.intervalo) {
+    clearInterval(estado.emulacion.intervalo);
+    estado.emulacion.intervalo = setInterval(() => {
+      if (estado.emulacion.tick >= estado.emulacion.estadosPorTick.length) {
+        clearInterval(estado.emulacion.intervalo);
+        estado.emulacion.intervalo = null;
+        document.getElementById('btn-auto').textContent = '🔁 Auto';
+      } else {
+        ejecutarTick();
+      }
+    }, v);
+  }
+}
+
+// Actualiza la barra de progreso
+function actualizarProgressBar(actual, total) {
+  const pct = total > 0 ? (actual / total) * 100 : 0;
+  document.getElementById('emu-progress-bar').style.width = pct + '%';
+  document.getElementById('emu-progress-label').textContent = `${actual} / ${total} referencias`;
+}
+
+/* ================================================================
+   ALGORITMOS DE PAGINACIÓN
+================================================================ */
+
+/*
+  Función central: elige y ejecuta el algoritmo indicado.
+  Retorna: { estadosPorTick, marcoAfectado, resultados, nombre,
+             page_faults, hits, tasa_fallos, eficiencia }
+*/
+function ejecutarAlgoritmo(nombre, refs, numMarcos) {
+  switch (nombre) {
+    case 'FIFO':  return algoFIFO(refs, numMarcos);
+    case 'LRU':   return algoLRU(refs, numMarcos);
+    case 'OPT':   return algoOPT(refs, numMarcos);
+    case 'SC':    return algoSecondChance(refs, numMarcos);
+    case 'CLOCK': return algoClock(refs, numMarcos);
+    case 'MRU':   return algoMRU(refs, numMarcos);
+    case 'LFU':   return algoLFU(refs, numMarcos);
+    default:      return algoFIFO(refs, numMarcos);
+  }
+}
+
+// Construye el objeto de resultado estándar
+function construirResultado(nombre, marcos, marcoAf, resultados) {
+  const faults = resultados.filter(r => r === 'FAULT').length;
+  const hits   = resultados.length - faults;
+  return {
+    nombre,
+    estadosPorTick: marcos,
+    marcoAfectado:  marcoAf,
+    resultados,
+    page_faults: faults,
+    hits,
+    tasa_fallos:  parseFloat(((faults / resultados.length) * 100).toFixed(2)),
+    eficiencia:   parseFloat(((hits   / resultados.length) * 100).toFixed(2))
+  };
+}
+
+// Copia el estado actual de marcos (-1 para vacíos)
+function snapMarcos(arr, n) {
+  const s = [];
+  for (let i = 0; i < n; i++) s.push(arr[i] !== undefined ? arr[i] : -1);
+  return s;
+}
+
+/* ------ FIFO ------ */
+function algoFIFO(refs, n) {
+  const marcos    = new Array(n).fill(-1);
+  const cola      = [];   // orden de llegada (índice en marcos)
+  const estadosPT = [];
+  const marcoAf   = [];
+  const resultados= [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      // HIT
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      // PAGE FAULT
+      resultados.push('FAULT');
+      let pos;
+      if (cola.length < n) {
+        // Hay marco libre
+        pos = marcos.indexOf(-1);
+        cola.push(pos);
+      } else {
+        // Reemplazar el primero que entró
+        pos = cola.shift();
+        cola.push(pos);
+      }
+      marcos[pos] = pag;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('FIFO', estadosPT, marcoAf, resultados);
+}
+
+/* ------ LRU ------ */
+function algoLRU(refs, n) {
+  const marcos    = new Array(n).fill(-1);
+  const ultimoUso = new Array(n).fill(-1); // tick del último acceso
+  const estadosPT = [];
+  const marcoAf   = [];
+  const resultados= [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      ultimoUso[idx] = t;
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      let pos = marcos.indexOf(-1); // marco libre
+      if (pos === -1) {
+        // Reemplazar el LRU (menor timestamp)
+        let minTick = Infinity, minPos = 0;
+        for (let m = 0; m < n; m++) {
+          if (ultimoUso[m] < minTick) { minTick = ultimoUso[m]; minPos = m; }
+        }
+        pos = minPos;
+      }
+      marcos[pos]    = pag;
+      ultimoUso[pos] = t;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('LRU', estadosPT, marcoAf, resultados);
+}
+
+/* ------ OPT ------ */
+function algoOPT(refs, n) {
+  const marcos    = new Array(n).fill(-1);
+  const estadosPT = [];
+  const marcoAf   = [];
+  const resultados= [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      let pos = marcos.indexOf(-1);
+      if (pos === -1) {
+        // Encontrar la página con uso más lejano en el futuro
+        let maxDist = -1, reemplazar = 0;
+        for (let m = 0; m < n; m++) {
+          const proxUso = refs.indexOf(marcos[m], t + 1);
+          const dist    = proxUso === -1 ? Infinity : proxUso;
+          if (dist > maxDist) { maxDist = dist; reemplazar = m; }
+        }
+        pos = reemplazar;
+      }
+      marcos[pos] = pag;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('OPT', estadosPT, marcoAf, resultados);
+}
+
+/* ------ SECOND CHANCE ------ */
+function algoSecondChance(refs, n) {
+  const marcos     = new Array(n).fill(-1);
+  const bitRef     = new Array(n).fill(0);
+  const colaOrden  = []; // índices de marcos en orden FIFO
+  const estadosPT  = [];
+  const marcoAf    = [];
+  const resultados = [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      bitRef[idx] = 1;
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      let pos;
+      if (marcos.indexOf(-1) !== -1) {
+        pos = marcos.indexOf(-1);
+        colaOrden.push(pos);
+      } else {
+        // Buscar víctima con second chance
+        while (true) {
+          const candidato = colaOrden[0];
+          if (bitRef[candidato] === 1) {
+            // Segunda oportunidad: limpiar bit y mover al final
+            bitRef[candidato] = 0;
+            colaOrden.push(colaOrden.shift());
+          } else {
+            pos = colaOrden.shift();
+            colaOrden.push(pos);
+            break;
+          }
+        }
+      }
+      marcos[pos]  = pag;
+      bitRef[pos]  = 0;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('Second Chance', estadosPT, marcoAf, resultados);
+}
+
+/* ------ CLOCK ------ */
+function algoClock(refs, n) {
+  const marcos     = new Array(n).fill(-1);
+  const bitRef     = new Array(n).fill(0);
+  let   hand       = 0; // puntero circular
+  const estadosPT  = [];
+  const marcoAf    = [];
+  const resultados = [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      bitRef[idx] = 1;
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      // Si hay marco libre, usar ese
+      const libre = marcos.indexOf(-1);
+      if (libre !== -1) {
+        marcos[libre]  = pag;
+        bitRef[libre]  = 1;
+        estadosPT.push(snapMarcos(marcos, n));
+        marcoAf.push(libre);
+        continue;
+      }
+      // Avanzar el puntero hasta encontrar bitRef=0
+      while (bitRef[hand] === 1) {
+        bitRef[hand] = 0;
+        hand = (hand + 1) % n;
+      }
+      const pos = hand;
+      marcos[pos]  = pag;
+      bitRef[pos]  = 1;
+      hand = (hand + 1) % n;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('Clock', estadosPT, marcoAf, resultados);
+}
+
+/* ------ MRU ------ */
+function algoMRU(refs, n) {
+  const marcos    = new Array(n).fill(-1);
+  const ultimoUso = new Array(n).fill(-1);
+  const estadosPT = [];
+  const marcoAf   = [];
+  const resultados= [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      ultimoUso[idx] = t;
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      let pos = marcos.indexOf(-1);
+      if (pos === -1) {
+        // Reemplazar el MRU (MAYOR timestamp)
+        let maxTick = -Infinity, maxPos = 0;
+        for (let m = 0; m < n; m++) {
+          if (ultimoUso[m] > maxTick) { maxTick = ultimoUso[m]; maxPos = m; }
+        }
+        pos = maxPos;
+      }
+      marcos[pos]    = pag;
+      ultimoUso[pos] = t;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('MRU', estadosPT, marcoAf, resultados);
+}
+
+/* ------ LFU ------ */
+function algoLFU(refs, n) {
+  const marcos    = new Array(n).fill(-1);
+  const freq      = new Array(n).fill(0);
+  const entrada   = new Array(n).fill(-1); // tick de carga
+  const estadosPT = [];
+  const marcoAf   = [];
+  const resultados= [];
+
+  for (let t = 0; t < refs.length; t++) {
+    const pag = refs[t];
+    const idx = marcos.indexOf(pag);
+
+    if (idx !== -1) {
+      freq[idx]++;
+      resultados.push('HIT');
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(idx);
+    } else {
+      resultados.push('FAULT');
+      let pos = marcos.indexOf(-1);
+      if (pos === -1) {
+        // Reemplazar la de menor frecuencia; desempate por tick de entrada (FIFO)
+        let minFreq = Infinity, minTick = Infinity, minPos = 0;
+        for (let m = 0; m < n; m++) {
+          if (freq[m] < minFreq || (freq[m] === minFreq && entrada[m] < minTick)) {
+            minFreq = freq[m];
+            minTick = entrada[m];
+            minPos  = m;
+          }
+        }
+        pos = minPos;
+      }
+      marcos[pos]  = pag;
+      freq[pos]    = 1;
+      entrada[pos] = t;
+      estadosPT.push(snapMarcos(marcos, n));
+      marcoAf.push(pos);
+    }
+  }
+  return construirResultado('LFU', estadosPT, marcoAf, resultados);
+}
+
+/* ================================================================
+   MÓDULO 5 — REPORTE FINAL
+================================================================ */
+
+// Actualiza la sección de resumen cuando se entra al módulo
+function actualizarReporte() {
+  const res = estado.resultadoEmulacion;
+  const msgEl = document.getElementById('msg-reporte');
+
+  if (!res) {
+    msgEl.textContent = '⚠ Aún no se ha ejecutado ninguna emulación. Ve a "Emular MMU" y corre la simulación primero.';
+    msgEl.className   = 'msg msg-info visible';
+    document.getElementById('card-resumen-alg').style.display = 'none';
+    return;
+  }
+
+  msgEl.className = 'msg'; // ocultar
+  document.getElementById('card-resumen-alg').style.display = '';
+
+  const total = res.page_faults + res.hits;
+  document.getElementById('stats-resumen').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Algoritmo</div>
+      <div class="stat-value" style="font-size:18px">${res.nombre}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Refs</div>
+      <div class="stat-value">${total}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Page Faults</div>
+      <div class="stat-value" style="color:var(--danger)">${res.page_faults}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Hits</div>
+      <div class="stat-value" style="color:var(--success)">${res.hits}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Tasa Fallos</div>
+      <div class="stat-value" style="color:var(--warning)">${res.tasa_fallos}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Eficiencia</div>
+      <div class="stat-value" style="color:var(--success)">${res.eficiencia}%</div>
+    </div>
+  `;
+}
+
+// Ejecuta los 7 algoritmos y muestra la tabla comparativa
+function compararAlgoritmos() {
+  if (estado.secuenciaReferencias.length === 0)
+    return mostrarMsg('msg-reporte', '⚠ No hay secuencia de referencias. Ejecuta la emulación primero.', 'msg-error');
+
+  const refs   = estado.secuenciaReferencias;
+  const n      = estado.config.marcasFisicos;
+  const algos  = [
+    { clave: 'FIFO',  nombre: 'FIFO' },
+    { clave: 'LRU',   nombre: 'LRU' },
+    { clave: 'OPT',   nombre: 'OPT' },
+    { clave: 'SC',    nombre: 'Second Chance' },
+    { clave: 'CLOCK', nombre: 'Clock' },
+    { clave: 'MRU',   nombre: 'MRU' },
+    { clave: 'LFU',   nombre: 'LFU' },
+  ];
+
+  const resultados = algos.map(a => ejecutarAlgoritmo(a.clave, refs, n));
+
+  // Encontrar mejor y peor
+  const minFaults = Math.min(...resultados.map(r => r.page_faults));
+  const maxFaults = Math.max(...resultados.map(r => r.page_faults));
+
+  // Renderizar tabla comparativa
+  const tbody = document.getElementById('tbody-comparativa');
+  tbody.innerHTML = resultados.map((r, i) => {
+    const esMejor = r.page_faults === minFaults;
+    const esPeor  = r.page_faults === maxFaults && !esMejor;
+    const rowClass = esMejor ? 'fila-mejor' : (esPeor ? 'fila-peor' : '');
+    const rankBadge= esMejor ? '<span class="badge badge-mejor">✓ Mejor</span>'
+                             : (esPeor ? '<span class="badge badge-peor">✗ Peor</span>' : '');
+    return `<tr class="${rowClass}">
+      <td><strong>${r.nombre}</strong></td>
+      <td class="mono" style="color:var(--danger)">${r.page_faults}</td>
+      <td class="mono" style="color:var(--success)">${r.hits}</td>
+      <td class="mono">${r.tasa_fallos}%</td>
+      <td class="mono" style="color:var(--success)">${r.eficiencia}%</td>
+      <td>${rankBadge}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('card-comparativa').style.display = '';
+
+  // Dibujar gráfico de barras con Canvas API
+  dibujarGrafico(resultados, minFaults, maxFaults);
+}
+
+// Dibuja un gráfico de barras con Canvas API (sin librerías externas)
+function dibujarGrafico(resultados, minFaults, maxFaults) {
+  const card   = document.getElementById('card-grafico');
+  const canvas = document.getElementById('canvas-grafico');
+  card.style.display = '';
+
+  // Ajustar tamaño del canvas al contenedor
+  const W = canvas.offsetWidth || 700;
+  const H = 280;
+  canvas.width  = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // Colores de fondo del canvas (igual al card)
+  ctx.fillStyle = '#0f1f38';
+  ctx.fillRect(0, 0, W, H);
+
+  const nombres   = resultados.map(r => r.nombre);
+  const valores   = resultados.map(r => r.page_faults);
+  const maxValor  = Math.max(...valores, 1);
+  const numBars   = resultados.length;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const areaW = W - padL - padR;
+  const areaH = H - padT - padB;
+  const barW  = (areaW / numBars) * 0.55;
+  const gap   = (areaW / numBars);
+
+  // Ejes
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, H - padB);
+  ctx.lineTo(W - padR, H - padB);
+  ctx.stroke();
+
+  // Líneas de guía horizontales
+  const guias = 5;
+  for (let g = 1; g <= guias; g++) {
+    const y = (H - padB) - (areaH / guias) * g;
+    ctx.strokeStyle = '#1e3452';
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(W - padR, y);
+    ctx.stroke();
+    // Etiqueta eje Y
+    const etVal = Math.round((maxValor / guias) * g);
+    ctx.fillStyle   = '#64748b';
+    ctx.font        = '11px Inter, sans-serif';
+    ctx.textAlign   = 'right';
+    ctx.fillText(etVal, padL - 6, y + 4);
+  }
+
+  // Barras
+  resultados.forEach((r, i) => {
+    const barH  = (r.page_faults / maxValor) * areaH;
+    const x     = padL + gap * i + (gap - barW) / 2;
+    const y     = (H - padB) - barH;
+
+    // Color según mejor/peor
+    let color;
+    if (r.page_faults === minFaults)  color = '#22c55e';
+    else if (r.page_faults === maxFaults) color = '#ef4444';
+    else color = '#3b82f6';
+
+    // Gradiente de barra
+    const grad = ctx.createLinearGradient(x, y, x, H - padB);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, color + '55');
+    ctx.fillStyle = grad;
+
+    // Barra redondeada superior
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]);
+    ctx.fill();
+
+    // Valor encima de la barra
+    ctx.fillStyle   = '#e2e8f0';
+    ctx.font        = 'bold 12px Inter, sans-serif';
+    ctx.textAlign   = 'center';
+    ctx.fillText(r.page_faults, x + barW / 2, y - 6);
+
+    // Etiqueta eje X
+    ctx.fillStyle = '#94a3b8';
+    ctx.font      = '11px Inter, sans-serif';
+    ctx.fillText(r.nombre, x + barW / 2, H - padB + 18);
+  });
+
+  // Título del gráfico
+  ctx.fillStyle = '#94a3b8';
+  ctx.font      = '12px Inter, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Page Faults por Algoritmo', padL, 14);
+}
+
+/* ================================================================
+   EXPORTAR REPORTE
+================================================================ */
+
+// Genera y descarga un archivo .txt con el reporte completo
+function exportarReporte() {
+  const res = estado.resultadoEmulacion;
+  if (!res) return mostrarMsg('msg-reporte', '⚠ No hay resultados para exportar. Ejecuta la emulación primero.', 'msg-error');
+
+  const total = res.page_faults + res.hits;
+  const cfg   = estado.config;
+
+  let texto = '='.repeat(60) + '\n';
+  texto += '   REPORTE MMU — EMULADOR DE MEMORIA VIRTUAL\n';
+  texto += '='.repeat(60) + '\n\n';
+
+  texto += `Fecha: ${new Date().toLocaleString('es')}\n`;
+  texto += `Algoritmo ejecutado: ${res.nombre}\n`;
+  texto += `Marcos físicos: ${cfg.marcasFisicos}\n`;
+  texto += `Páginas virtuales: ${cfg.paginasVirtuales}\n\n`;
+
+  texto += '-'.repeat(40) + '\n';
+  texto += 'RESUMEN DEL ALGORITMO\n';
+  texto += '-'.repeat(40) + '\n';
+  texto += `Total de referencias:  ${total}\n`;
+  texto += `Page Faults:           ${res.page_faults}\n`;
+  texto += `Hits:                  ${res.hits}\n`;
+  texto += `Tasa de fallos:        ${res.tasa_fallos}%\n`;
+  texto += `Eficiencia:            ${res.eficiencia}%\n\n`;
+
+  texto += '-'.repeat(40) + '\n';
+  texto += 'PROCESOS REGISTRADOS\n';
+  texto += '-'.repeat(40) + '\n';
+  estado.procesos.forEach(p => {
+    texto += `  [${p.id}] ${p.nombre} | Prioridad: ${p.prioridad} | CPU: ${p.cpu_time} | Páginas: ${p.memoria}\n`;
+  });
+
+  texto += '\n' + '-'.repeat(40) + '\n';
+  texto += 'SECUENCIA DE REFERENCIAS\n';
+  texto += '-'.repeat(40) + '\n';
+  texto += estado.secuenciaReferencias.join(', ') + '\n\n';
+
+  // Tabla comparativa si existe
+  const filasComp = document.querySelectorAll('#tbody-comparativa tr');
+  if (filasComp.length > 0) {
+    texto += '-'.repeat(60) + '\n';
+    texto += 'TABLA COMPARATIVA — 7 ALGORITMOS\n';
+    texto += '-'.repeat(60) + '\n';
+    texto += `${'Algoritmo'.padEnd(16)} ${'Fallos'.padEnd(8)} ${'Hits'.padEnd(8)} ${'Tasa Fallos'.padEnd(14)} ${'Eficiencia'.padEnd(12)}\n`;
+    texto += '-'.repeat(60) + '\n';
+    const refs   = estado.secuenciaReferencias;
+    const n      = cfg.marcasFisicos;
+    ['FIFO','LRU','OPT','SC','CLOCK','MRU','LFU'].forEach(clave => {
+      const r = ejecutarAlgoritmo(clave, refs, n);
+      texto += `${r.nombre.padEnd(16)} ${String(r.page_faults).padEnd(8)} ${String(r.hits).padEnd(8)} ${(r.tasa_fallos + '%').padEnd(14)} ${(r.eficiencia + '%').padEnd(12)}\n`;
+    });
+  }
+
+  texto += '\n' + '='.repeat(60) + '\n';
+  texto += 'Generado por Sistema MMU — Emulador de Memoria Virtual\n';
+  texto += '='.repeat(60) + '\n';
+
+  // Descargar usando Blob
+  const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'reporte_mmu.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ================================================================
+   INICIALIZACIÓN
+================================================================ */
+
+// Inicializa la aplicación al cargar la página
+window.addEventListener('DOMContentLoaded', () => {
+  // Asegurar que el primer panel está activo
+  navegarA('procesos');
+  // Configurar label de velocidad inicial
+  document.getElementById('velocidad-label').textContent =
+    document.getElementById('slider-velocidad').value + ' ms';
+});
+</script>
+</body>
+</html>

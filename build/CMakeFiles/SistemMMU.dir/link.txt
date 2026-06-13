@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/SistemMMU.dir/src/algoritmos.c.o CMakeFiles/SistemMMU.dir/src/configSO.c.o CMakeFiles/SistemMMU.dir/src/emulacion.c.o CMakeFiles/SistemMMU.dir/src/listas.c.o CMakeFiles/SistemMMU.dir/src/main.c.o CMakeFiles/SistemMMU.dir/src/planificador.c.o CMakeFiles/SistemMMU.dir/src/procesos.c.o CMakeFiles/SistemMMU.dir/src/visualizacion.c.o -o SistemMMU
