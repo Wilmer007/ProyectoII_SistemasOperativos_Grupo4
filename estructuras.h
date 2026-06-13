@@ -20,7 +20,6 @@
 #define MAX_REFS         256   // max referencias para OPT            
 #define MARCO_LIBRE      -1    // marco sin pagina asignada           
 #define PAGINA_EN_DISCO  -1    // pagina no cargada en RAM            
-#define VENTANA_DEFAULT  4     // ventana por defecto para Conj.Trab. 
 
 
 
@@ -50,8 +49,7 @@ typedef enum {
     FIFO  = 2,   /* First In First Out          */
     SC    = 3,   /* Segunda Oportunidad         */
     RELOJ = 4,   /* Reloj (Clock)               */
-    LRU   = 5,   /* Least Recently Used         */
-    CT    = 6    /* Conjunto de Trabajo         */
+    LRU   = 5   /* Least Recently Used         */
 } AlgoritmoMMU;
 
 static inline const char* algoritmoTexto(AlgoritmoMMU a) {
@@ -62,7 +60,6 @@ static inline const char* algoritmoTexto(AlgoritmoMMU a) {
         case SC:    return "SC    (Segunda Oportunidad)";
         case RELOJ: return "RELOJ (Reloj / Clock)";
         case LRU:   return "LRU   (Least Recently Used)";
-        case CT:    return "CT    (Conjunto de Trabajo)";
         default:    return "DESCONOCIDO";
     }
 }
@@ -85,18 +82,8 @@ typedef struct Proceso {
     struct Proceso *siguiente;        /* apuntador siguiente nodo         */
 } Proceso;
 
-/* 
- *  STRUCT: Pagina  (nodo de lista enlazada)
- *  Representa una pagina de memoria VIRTUAL.
- *
- *  Campos por algoritmo:
- *    TODOS     → numPagina, idProceso, enMemoria, numMarco
- *    LRU       → ultimoUso
- *    CT        → ultimoUso, enConjunto
- *
- *  Usado por: Modulo 3 (tabla de paginas)
- *             Modulo 4 (algoritmos de paginacion)
- * */
+
+
 typedef struct Pagina {
     int  numPagina;           /* indice logico (0, 1, 2 ...)              */
     int  idProceso;           /* proceso al que pertenece                 */
@@ -106,19 +93,12 @@ typedef struct Pagina {
     /* LRU, Conjunto de Trabajo */
     int  ultimoUso;           /* timestamp del ultimo acceso              */
 
-    /* Conjunto de Trabajo */
-    int  enConjunto;          /* 1 = dentro de la ventana de trabajo      */
 
     struct Pagina *siguiente; /* apuntador siguiente nodo                 */
 } Pagina;
 
-/* 
- *  STRUCT: Marco  (nodo de lista enlazada)
 
- *
- *  Usado por: Modulo 3 (inicializacion de RAM)
- *             Modulo 4 (algoritmos de paginacion)
- * =*/
+
 typedef struct Marco {
     int  numMarco;            /* indice fisico (0, 1, 2 ...)              */
     int  ocupado;             /* 1 = en uso,  0 = libre                   */
@@ -134,8 +114,6 @@ typedef struct Marco {
     /* NRU */
     int  bitModificado;       /* 1 = fue escrita (modificada)             */
 
-    /* Conjunto de Trabajo */
-    int  enConjunto;          /* 1 = dentro de la ventana de trabajo      */
 
     struct Marco *siguiente;  /* apuntador siguiente nodo                 */
 } Marco;
@@ -149,7 +127,6 @@ typedef struct {
 
     int punteroReloj;
 
-    int ventanaTrabajo;
 
 } ConfigSO;
 
@@ -163,7 +140,6 @@ static inline void iniciarConfigSO(ConfigSO *cfg) {
     cfg->algoritmoMMU  = FIFO;
     cfg->tamanioPagina = 4;
     cfg->punteroReloj  = 0;
-    cfg->ventanaTrabajo = VENTANA_DEFAULT;
 }
 
 #endif /* ESTRUCTURAS_H */
