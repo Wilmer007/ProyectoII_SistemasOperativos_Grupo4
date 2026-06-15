@@ -1,5 +1,6 @@
 #include "listas.h"
-#include "TablaPaginas.h"
+#include "tablapaginas.h"
+#include "servidor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -12,7 +13,11 @@ extern void menuEmulacion(EstadoApp* app);
 extern void menuReporteFinal(EstadoApp* app);
 extern void printHeader();
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1 && strcmp(argv[1], "--web") == 0) {
+        iniciarServidor();
+        return 0;
+    }
     srand(time(NULL));
 
     EstadoApp app;

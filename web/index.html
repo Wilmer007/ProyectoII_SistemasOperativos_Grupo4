@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sistema MMU — Emulador de Memoria Virtual</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f4efe8; --card:#fffdfa; --card2:#f7f1e8;
+    --border:#e7ded1; --text:#433d35; --muted:#8a8073; --faint:#b6ab9b;
+    --accent:#a9805d; --accent-soft:#efe6da; --accent-text:#86643f;
+    --ok:#88a06d; --ok-soft:#e8efdd; --bad:#bd8079; --bad-soft:#f1e2df;
+    --warn:#c2a162; --warn-soft:#f3ecd7;
+    --shadow:0 1px 3px rgba(67,61,53,.06),0 1px 2px rgba(67,61,53,.04);
+    --shadow-lg:0 12px 28px rgba(67,61,53,.09);
+    --radius:13px; --radius-sm:9px;
+  }
+  html,body{height:100%;font-family:'Segoe UI',system-ui,Inter,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+  button,input,select{font:inherit}
+  .app{display:grid;grid-template-columns:262px 1fr;min-height:100vh}
+
+  /* Sidebar */
+  .side{background:var(--card);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .brand .logo{width:36px;height:36px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:16px}
+  .brand h1{font-size:15px;font-weight:700;letter-spacing:-.01em}
+  .brand p{font-size:11px;color:var(--muted)}
+  .progreso{margin:20px 4px 16px}
+  .progreso .top{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .progreso .bar{height:6px;background:#e7ded1;border-radius:20px;overflow:hidden}
+  .progreso .bar span{display:block;height:100%;width:0;background:var(--accent);border-radius:20px;transition:width .4s ease}
+
+  .steps{display:flex;flex-direction:column;gap:3px;flex:1}
+  .step{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 12px;border:1px solid transparent;background:transparent;border-radius:var(--radius-sm);cursor:pointer;transition:.16s}
+  .step:hover{background:var(--card2)}
+  .step.activo{background:var(--accent-soft);border-color:#e7d8c6}
+  .step-num{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;background:#ebe3d6;color:var(--muted);transition:.25s}
+  .step.activo .step-num{background:var(--accent);color:#fff}
+  .step-num.done{background:var(--ok);color:#fff}
+  .step b{font-size:14px;font-weight:600;color:var(--text)}
+  .step.activo b{color:var(--accent-text)}
+  .side .foot{margin-top:14px;padding-top:16px;border-top:1px solid var(--border);font-size:11px;color:var(--faint);text-align:center}
+
+  /* Main */
+  .main{padding:32px 40px;overflow:auto;height:100vh}
+  .panel{display:none;animation:fade .28s ease}
+  .panel.activo{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .h{display:flex;align-items:baseline;gap:14px;margin-bottom:4px}
+  .h h2{font-size:23px;font-weight:700;letter-spacing:-.02em}
+  .h .chip{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted)}
+  .sub{font-size:14px;color:var(--muted);margin-bottom:24px}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:20px;box-shadow:var(--shadow)}
+  .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:16px}
+  .card-title .leg{font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint);margin-left:8px}
+  .label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+
+  .grid-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:15px;margin-bottom:16px}
+  .fg{display:flex;flex-direction:column;gap:7px}
+  .fg label{font-size:12px;font-weight:600;color:var(--text)}
+  .fg input,.fg select{background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:10px 12px;outline:none;transition:.15s}
+  .fg input:focus,.fg select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(169,128,93,.15)}
+  .fg input::placeholder{color:var(--faint)}
+
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{padding:10px 17px;border:0;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;transition:.15s}
+  .btn:active{transform:scale(.98)}
+  .btn.primary{background:var(--accent);color:#fff} .btn.primary:hover{background:#946b49}
+  .btn.ok{background:var(--ok);color:#fff} .btn.ok:hover{background:#74895a}
+  .btn.bad{background:#fff;color:var(--bad);border:1.5px solid #e6cfca} .btn.bad:hover{background:var(--bad-soft)}
+  .btn.warn{background:var(--warn);color:#fff} .btn.warn:hover{background:#a98a4d}
+  .btn.ghost{background:#fff;border:1.5px solid var(--border);color:var(--muted)} .btn.ghost:hover{border-color:var(--accent);color:var(--accent-text)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:11px 14px;text-align:left;white-space:nowrap}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;background:var(--card2);border-bottom:1px solid var(--border)}
+  tbody tr{border-bottom:1px solid var(--border)} tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:var(--card2)}
+  tr.sel,tr.active{background:var(--accent-soft)!important}
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--radius);background:#fff}
+  .mono{font-family:Consolas,'JetBrains Mono',monospace}
+
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+  .badge.listo{background:var(--accent-soft);color:var(--accent-text)}
+  .badge.hit{background:var(--ok-soft);color:#5f7544}
+  .badge.fault{background:var(--bad-soft);color:#a35f57}
+
+  .msg{padding:12px 16px;border-radius:var(--radius-sm);font-size:14px;margin-bottom:16px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:var(--bad-soft);color:#9c534b} .msg.okm{background:var(--ok-soft);color:#5f7544} .msg.info{background:var(--accent-soft);color:var(--accent-text)}
+  .hint{display:inline-block;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--muted)}
+  .hint.okh{background:var(--ok-soft);border-color:#d3deba;color:#5f7544}
+
+  .nav-footer{display:flex;justify-content:space-between;gap:10px;margin-top:8px}
+
+  /* Reproductor */
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .range{flex:1;min-width:160px;accent-color:var(--accent)}
+  .stats{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:14px;margin:18px 0}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;box-shadow:var(--shadow);transition:.16s}
+  .stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+  .stat .v{font-size:25px;font-weight:700;margin-top:4px;font-family:Consolas,monospace}
+  .stat.ok .v{color:#6f8a52} .stat.bad .v{color:#a35f57} .stat.acc .v{color:var(--accent-text)}
+  .cockpit{position:sticky;top:12px;z-index:5;box-shadow:var(--shadow-lg)}
+  .narr{display:flex;align-items:center;gap:16px;padding:11px 15px;border:1px solid var(--border);border-radius:var(--radius-sm)}
+  .narr.hit{background:var(--ok-soft);border-color:#d3deba}
+  .narr.fault{background:var(--bad-soft);border-color:#e6cfca}
+  .narr-badge{flex:0 0 auto;font-weight:700;font-size:13px;padding:6px 14px;border-radius:20px;background:#fff;border:1px solid var(--border)}
+  .narr.hit .narr-badge{color:#5f7544} .narr.fault .narr-badge{color:#a35f57}
+  .narr-txt{font-size:15px;line-height:1.45}
+  .narr-meta{margin-left:auto;display:flex;gap:18px;font-size:13px;color:var(--muted);white-space:nowrap}
+  .narr-meta b{color:var(--text);font-family:Consolas,monospace}
+  .matriz{border-collapse:collapse;font-size:13px;font-family:Consolas,monospace}
+  .matriz td,.matriz th{border:1px solid var(--border);padding:6px 10px;text-align:center;min-width:32px}
+  .matriz .rowhead{background:var(--card2);font-weight:700;text-align:left;color:var(--muted)}
+  .matriz .col-on{background:var(--accent-soft)}
+  .matriz .ref{font-weight:700;cursor:pointer} .matriz .ref.f{color:#a35f57} .matriz .ref.h{color:#5f7544}
+  .matriz td.chg{background:var(--accent-soft);font-weight:700;color:var(--accent-text)}
+  .matriz .fila-fallo td{color:#a35f57;font-weight:700}
+  .matriz .vacia{color:var(--faint)}
+  .timeline{display:flex;gap:5px;overflow:auto;padding:8px 0}
+  .tick{min-width:30px;height:30px;border-radius:7px;background:#fff;border:1.5px solid var(--border);display:grid;place-items:center;font-size:12px;font-weight:600;flex:0 0 auto;cursor:pointer;transition:.12s}
+  .tick:hover{transform:translateY(-2px)}
+  .tick.on{border-color:var(--accent);box-shadow:0 0 0 3px rgba(169,128,93,.18)} .tick.h{color:#6f8a52} .tick.f{color:#a35f57}
+  .frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .frame{background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);padding:15px;min-height:116px;transition:.2s;box-shadow:var(--shadow)}
+  .frame.active{border-color:var(--accent);box-shadow:0 0 0 3px rgba(169,128,93,.16);transform:translateY(-3px)}
+  .frame.empty{opacity:.65;background:var(--card2)} .frame .num{font-size:12px;color:var(--muted);font-weight:600} .frame .page{font-size:27px;font-weight:700;margin:8px 0;color:var(--accent-text)}
+  .frame.empty .page{color:var(--faint)}
+  .bits{display:flex;gap:9px;color:var(--faint);font-size:12px;margin-top:4px}
+  .bar{height:12px;background:#ece4d8;border-radius:20px;overflow:hidden}
+  .bar span{display:block;height:100%;background:var(--accent);transition:width .25s} .bar.hitbar span{background:var(--ok)} .bar.faultbar span{background:var(--bad)}
+  .process{display:grid;grid-template-columns:140px 1fr 60px;gap:12px;align-items:center;margin:10px 0}
+  .process .bar span{background:var(--warn)}
+  .two{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
+  .emptymsg{padding:30px;text-align:center;color:var(--muted)}
+  #canvas-grafico{display:block;width:100%;height:320px;background:#fff;border:1px solid var(--border);border-radius:var(--radius)}
+  .fila-mejor td{background:var(--ok-soft)} .fila-peor td{background:var(--bad-soft)}
+  @media(max-width:920px){.app{grid-template-columns:1fr}.side{position:static;height:auto}.two{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.main{padding:20px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div><h1>Sistema MMU</h1><p>Emulador de Memoria Virtual</p></div>
+    </div>
+
+    <div class="progreso">
+      <div class="top"><span>Progreso</span><span id="prog-txt">0 / 5</span></div>
+      <div class="bar"><span id="prog-bar"></span></div>
+    </div>
+
+    <nav class="steps">
+      <button class="step activo" id="nav-procesos" onclick="navegarA('procesos')">
+        <span class="step-num" id="dot-procesos" data-num="1">1</span><b>Procesos</b></button>
+      <button class="step" id="nav-planificador" onclick="navegarA('planificador')">
+        <span class="step-num" id="dot-planificador" data-num="2">2</span><b>Planificador</b></button>
+      <button class="step" id="nav-configso" onclick="navegarA('configso')">
+        <span class="step-num" id="dot-configso" data-num="3">3</span><b>Configuración SO</b></button>
+      <button class="step" id="nav-emulacion" onclick="navegarA('emulacion')">
+        <span class="step-num" id="dot-emulacion" data-num="4">4</span><b>Emular MMU</b></button>
+      <button class="step" id="nav-reporte" onclick="navegarA('reporte')">
+        <span class="step-num" id="dot-reporte" data-num="5">5</span><b>Reporte Final</b></button>
+    </nav>
+
+    <div class="foot">Proyecto II — Sistemas Operativos · 2026</div>
+  </aside>
+
+  <main class="main">
+
+    <!-- 1. PROCESOS -->
+    <section class="panel activo" id="panel-procesos">
+      <div class="h"><h2>Procesos</h2><span class="chip" id="badge-total">0 procesos</span></div>
+      <p class="sub">Programas que se ejecutarán y usarán memoria.</p>
+      <div id="msg-procesos" class="msg"></div>
+
+      <div class="card">
+        <div class="card-title">Datos del proceso</div>
+        <div class="grid-form">
+          <div class="fg"><label>ID</label><input type="number" id="p-id" min="1" placeholder="1" /></div>
+          <div class="fg"><label>Nombre</label><input type="text" id="p-nombre" placeholder="ProcesoA" /></div>
+          <div class="fg"><label>Prioridad</label><input type="number" id="p-prioridad" min="1" placeholder="1 = mayor" /></div>
+          <div class="fg"><label>CPU Time</label><input type="number" id="p-cputime" min="1" placeholder="6" /></div>
+          <div class="fg"><label>Páginas</label><input type="number" id="p-memoria" min="1" placeholder="3" /></div>
+        </div>
+        <div class="btns">
+          <button class="btn primary" onclick="agregarProceso()">Agregar proceso</button>
+          <button class="btn ghost" onclick="editarProceso()">Editar selección</button>
+          <button class="btn bad" onclick="eliminarProceso()">Eliminar selección</button>
+          <button class="btn ghost" onclick="limpiarFormProceso()">Limpiar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Lista de procesos</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Prioridad</th><th>CPU</th><th>Páginas</th></tr></thead>
+            <tbody id="tbody-procesos"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="nav-footer"><span></span>
+        <button class="btn primary" onclick="irSiguiente('procesos')">Siguiente: Planificador</button></div>
+    </section>
+
+    <!-- 2. PLANIFICADOR -->
+    <section class="panel" id="panel-planificador">
+      <div class="h"><h2>Planificador</h2></div>
+      <p class="sub">Orden en que los procesos acceden a la CPU.</p>
+      <div id="msg-planificador" class="msg"></div>
+
+      <div class="card">
+        <div class="card-title">Algoritmo de planificación</div>
+        <div class="grid-form">
+          <div class="fg"><label>Algoritmo</label>
+            <select id="algoritmo-plan" onchange="toggleQuantum()">
+              <option value="FCFS">FCFS — First Come First Served</option>
+              <option value="RR">Round Robin</option>
+              <option value="SJF">SJF — Shortest Job First</option>
+              <option value="PRIORIDAD">Por Prioridad</option>
+            </select>
+          </div>
+          <div class="fg" id="grupo-quantum" style="display:none"><label>Quantum (ticks)</label><input type="number" id="quantum" min="1" value="2" /></div>
+        </div>
+        <span class="hint">La cola generada se mostrará tras iniciar la emulación.</span>
+        <div class="table-wrap" id="wrap-cola" style="display:none;margin-top:14px">
+          <table>
+            <thead><tr><th>Turno</th><th>ID</th><th>Nombre</th><th>CPU</th><th>Prioridad</th></tr></thead>
+            <tbody id="tbody-cola"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="nav-footer">
+        <button class="btn ghost" onclick="navegarA('procesos')">Anterior</button>
+        <button class="btn primary" onclick="irSiguiente('planificador')">Siguiente: Configuración SO</button></div>
+    </section>
+
+    <!-- 3. CONFIG SO -->
+    <section class="panel" id="panel-configso">
+      <div class="h"><h2>Configuración del SO</h2></div>
+      <p class="sub">Parámetros de memoria y algoritmo de reemplazo.</p>
+      <div id="msg-configso" class="msg"></div>
+
+      <div class="card">
+        <div class="card-title">Memoria y algoritmo</div>
+        <div class="grid-form">
+          <div class="fg"><label>Páginas Virtuales</label><input type="number" id="so-paginas" min="1" placeholder="Total" oninput="actualizarProgreso();infoConfig()" /></div>
+          <div class="fg"><label>Marcos Físicos</label><input type="number" id="so-marcos" min="1" placeholder="Menos que páginas" oninput="actualizarProgreso();infoConfig()" /></div>
+          <div class="fg"><label>Algoritmo MMU</label>
+            <select id="so-algoritmo">
+              <option value="FIFO">FIFO — First In First Out</option>
+              <option value="LRU">LRU — Least Recently Used</option>
+              <option value="OPT">OPT — Óptimo</option>
+              <option value="SC">Second Chance</option>
+              <option value="CLOCK">Clock</option>
+              <option value="MRU">MRU — Most Recently Used</option>
+              <option value="LFU">LFU — Least Frequently Used</option>
+            </select>
+          </div>
+        </div>
+        <span id="so-req-label" class="hint">Define las páginas y los marcos.</span>
+      </div>
+
+      <div class="nav-footer">
+        <button class="btn ghost" onclick="navegarA('planificador')">Anterior</button>
+        <button class="btn primary" onclick="irSiguiente('configso')">Siguiente: Emular</button></div>
+    </section>
+
+    <!-- 4. EMULACIÓN -->
+    <section class="panel" id="panel-emulacion">
+      <div class="h"><h2>Emular MMU</h2></div>
+      <p class="sub">Simulación del reemplazo de páginas, calculada en C.</p>
+      <div id="msg-emulacion" class="msg"></div>
+
+      <div class="card cockpit">
+        <div class="controls" style="margin-bottom:12px">
+          <button class="btn ok" onclick="iniciarEmulacion()">Iniciar (calcular en C)</button>
+          <button class="btn primary" id="play" disabled>Reproducir</button>
+          <button class="btn ghost" id="prev" disabled>Anterior</button>
+          <button class="btn ghost" id="next" disabled>Siguiente</button>
+          <input class="range" id="slider" type="range" min="0" value="0" disabled />
+          <span class="label">Velocidad</span>
+          <input id="speed" type="range" min="80" max="1200" step="20" value="300" style="width:110px;accent-color:var(--accent)" />
+          <span class="label" id="speedLabel"></span>
+        </div>
+        <div class="narr" id="narr">
+          <span class="narr-badge" id="narr-badge">—</span>
+          <span class="narr-txt" id="narr-txt">Inicia la simulación para ver el detalle de cada paso.</span>
+          <span class="narr-meta"><span>Algoritmo <b id="side-alg">—</b></span><span>Tick <b id="side-tick">0/0</b></span><span>Eficiencia <b id="side-eff">0%</b></span></span>
+        </div>
+      </div>
+
+      <div class="card" style="border-style:dashed">
+        <div class="card-title">Modo manual <span class="leg">cadena de referencias propia (omite los pasos 1-3)</span></div>
+        <div class="grid-form">
+          <div class="fg" style="grid-column:1/-1"><label>Cadena de referencias</label>
+            <input type="text" id="manual-refs" placeholder="1 2 3 3 5 1 2 2 6 2 1 5 7 6 3" /></div>
+          <div class="fg"><label>Marcos</label><input type="number" id="manual-marcos" min="1" value="4" /></div>
+          <div class="fg"><label>Algoritmo</label>
+            <select id="manual-alg">
+              <option>FIFO</option><option selected>LRU</option><option>OPT</option>
+              <option>SC</option><option>CLOCK</option><option>MRU</option><option>LFU</option>
+            </select>
+          </div>
+        </div>
+        <div class="btns"><button class="btn warn" onclick="iniciarEmulacionManual()">Iniciar manual</button></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span class="label">Proceso</span><div class="v" id="st-proc">—</div></div>
+        <div class="stat"><span class="label">Página</span><div class="v" id="st-page">—</div></div>
+        <div class="stat ok"><span class="label">Hits</span><div class="v" id="st-hit">0</div></div>
+        <div class="stat bad"><span class="label">Fallos</span><div class="v" id="st-fault">0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Matriz de reemplazo <span class="leg">columnas = referencias · celda resaltada = página cargada · clic para ir a ese paso</span></div>
+        <div style="overflow:auto"><table class="matriz" id="matriz"></table></div>
+      </div>
+
+      <div class="two">
+        <div class="card"><div class="card-title">Marcos físicos (RAM)</div><div class="frames" id="frames"><div class="emptymsg">Inicia la simulación para ver los marcos.</div></div></div>
+        <div class="card"><div class="card-title">Rendimiento</div>
+          <div class="label">Hits</div><div class="bar hitbar" style="margin:6px 0 14px"><span id="bar-hit"></span></div>
+          <div class="label">Fallos</div><div class="bar faultbar" style="margin:6px 0"><span id="bar-fault"></span></div>
+          <p id="summary" style="color:var(--muted);margin-top:14px;font-size:13.5px"></p>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-title">Avance por proceso</div><div id="processes"></div></div>
+
+      <div class="card"><div class="card-title">Tabla de páginas activa</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Pág. global</th><th>Proceso</th><th>Pág. virtual</th><th>Marco</th><th>Estado</th><th>R</th><th>M</th></tr></thead>
+          <tbody id="pages"></tbody>
+        </table></div>
+      </div>
+
+      <div class="nav-footer">
+        <button class="btn ghost" onclick="navegarA('configso')">Anterior</button>
+        <button class="btn primary" onclick="irSiguiente('emulacion')">Siguiente: Reporte</button></div>
+    </section>
+
+    <!-- 5. REPORTE -->
+    <section class="panel" id="panel-reporte">
+      <div class="h"><h2>Reporte Final</h2></div>
+      <p class="sub">Resultados y comparación de algoritmos.</p>
+      <div id="msg-reporte" class="msg"></div>
+
+      <div class="card">
+        <div class="card-title">Resumen de la última emulación</div>
+        <div class="stats">
+          <div class="stat acc"><span class="label">Algoritmo</span><div class="v" id="rep-alg" style="font-size:18px">—</div></div>
+          <div class="stat"><span class="label">Referencias</span><div class="v" id="rep-refs">0</div></div>
+          <div class="stat ok"><span class="label">Hits</span><div class="v" id="rep-hits">0</div></div>
+          <div class="stat bad"><span class="label">Fallos</span><div class="v" id="rep-fallos">0</div></div>
+        </div>
+        <span class="hint" id="rep-efic">Sin datos. Ejecuta una emulación primero.</span>
+      </div>
+
+      <div class="btns" style="margin-bottom:20px">
+        <button class="btn primary" onclick="compararAlgoritmos()">Comparar los 7 algoritmos</button>
+      </div>
+
+      <div class="card" id="card-comparativa" style="display:none">
+        <div class="card-title">Tabla comparativa</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Algoritmo</th><th>Fallos</th><th>Hits</th><th>Tasa de fallos</th><th>Eficiencia</th><th>Rank</th></tr></thead>
+          <tbody id="tbody-comparativa"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card" id="card-grafico" style="display:none">
+        <div class="card-title">Page faults por algoritmo</div>
+        <canvas id="canvas-grafico" width="900" height="320"></canvas>
+      </div>
+
+      <div class="nav-footer">
+        <button class="btn ghost" onclick="navegarA('emulacion')">Anterior</button><span></span></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const estado = { procesos: [], procesoSeleccionado: null, ultimaSim: null, ultimoPayload: null, comparado: false };
+const $ = id => document.getElementById(id);
+function val(id){ return $(id) ? $(id).value : ''; }
+
+function navegarA(modulo){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('activo'));
+  document.querySelectorAll('.step').forEach(b=>b.classList.remove('activo'));
+  const pan=$('panel-'+modulo); if(pan) pan.classList.add('activo');
+  const nb=$('nav-'+modulo); if(nb) nb.classList.add('activo');
+  if(modulo==='configso') infoConfig();
+  if(modulo==='reporte') refrescarResumen();
+  actualizarProgreso();
+  document.querySelector('.main').scrollTo({top:0,behavior:'smooth'});
+}
+const ORDEN=['procesos','planificador','configso','emulacion','reporte'];
+function irSiguiente(actual){
+  const i=ORDEN.indexOf(actual);
+  if(actual==='procesos' && estado.procesos.length===0){ return mostrarMsg('msg-procesos','Agrega al menos un proceso antes de continuar.','err'); }
+  if(i<ORDEN.length-1) navegarA(ORDEN[i+1]);
+}
+function pasosCompletos(){
+  const pag=parseInt(val('so-paginas')), mar=parseInt(val('so-marcos'));
+  const sumaPag=estado.procesos.reduce((s,p)=>s+p.memoria,0);
+  return {
+    procesos: estado.procesos.length>=1,
+    planificador: estado.procesos.length>=1,
+    configso: !isNaN(pag)&&!isNaN(mar)&&pag>=1&&mar>=1&&mar<pag&&pag>=sumaPag,
+    emulacion: !!estado.ultimaSim,
+    reporte: estado.comparado
+  };
+}
+function actualizarProgreso(){
+  const s=pasosCompletos(); let n=0;
+  ORDEN.forEach(m=>{
+    const done=s[m]; if(done) n++;
+    const d=$('dot-'+m); if(!d) return;
+    if(done) d.classList.add('done'); else d.classList.remove('done');
+    d.textContent=d.dataset.num;
+  });
+  $('prog-txt').textContent=n+' / 5';
+  $('prog-bar').style.width=(n/5*100)+'%';
+}
+
+function mostrarMsg(id,txt,tipo){ const e=$(id); if(!e)return; e.textContent=txt; e.className='msg show '+tipo; }
+function ocultarMsg(id){ const e=$(id); if(e) e.className='msg'; }
+
+/* Procesos */
+function limpiarFormProceso(){
+  ['p-id','p-nombre','p-prioridad','p-cputime','p-memoria'].forEach(id=>{ if($(id)) $(id).value=''; });
+  estado.procesoSeleccionado=null; ocultarMsg('msg-procesos');
+}
+function agregarProceso(){
+  const id=parseInt(val('p-id')), nombre=val('p-nombre').trim();
+  const prioridad=parseInt(val('p-prioridad')), cputime=parseInt(val('p-cputime')), memoria=parseInt(val('p-memoria'));
+  if(!nombre) return mostrarMsg('msg-procesos','El nombre no puede estar vacío.','err');
+  if(/[;\n]/.test(nombre)) return mostrarMsg('msg-procesos','El nombre no puede contener ; ni saltos de línea.','err');
+  if(isNaN(id)||id<1) return mostrarMsg('msg-procesos','El ID debe ser un número mayor a 0.','err');
+  if(estado.procesos.find(p=>p.id===id)) return mostrarMsg('msg-procesos','Ya existe un proceso con ese ID.','err');
+  if(isNaN(prioridad)||prioridad<1) return mostrarMsg('msg-procesos','La prioridad debe ser mayor o igual a 1.','err');
+  if(isNaN(cputime)||cputime<1) return mostrarMsg('msg-procesos','El CPU Time debe ser mayor o igual a 1.','err');
+  if(isNaN(memoria)||memoria<1) return mostrarMsg('msg-procesos','Las páginas deben ser mayor o igual a 1.','err');
+  estado.procesos.push({id,nombre,estado:'Listo',prioridad,cpu_time:cputime,memoria});
+  limpiarFormProceso(); renderTablaProcs();
+  mostrarMsg('msg-procesos',`Proceso "${nombre}" agregado.`,'okm');
+}
+function editarProceso(){
+  if(estado.procesoSeleccionado===null) return mostrarMsg('msg-procesos','Selecciona un proceso en la tabla.','err');
+  const idx=estado.procesoSeleccionado;
+  const id=parseInt(val('p-id')), nombre=val('p-nombre').trim();
+  const prioridad=parseInt(val('p-prioridad')), cputime=parseInt(val('p-cputime')), memoria=parseInt(val('p-memoria'));
+  if(!nombre||/[;\n]/.test(nombre)) return mostrarMsg('msg-procesos','Nombre inválido (sin ; ni saltos de línea).','err');
+  if(isNaN(id)||id<1) return mostrarMsg('msg-procesos','ID inválido.','err');
+  if(estado.procesos.find((p,i)=>p.id===id&&i!==idx)) return mostrarMsg('msg-procesos','Ese ID ya pertenece a otro proceso.','err');
+  if(isNaN(prioridad)||prioridad<1||isNaN(cputime)||cputime<1||isNaN(memoria)||memoria<1)
+    return mostrarMsg('msg-procesos','Prioridad, CPU y páginas deben ser mayor o igual a 1.','err');
+  Object.assign(estado.procesos[idx],{id,nombre,prioridad,cpu_time:cputime,memoria});
+  limpiarFormProceso(); renderTablaProcs();
+  mostrarMsg('msg-procesos',`Proceso "${nombre}" actualizado.`,'okm');
+}
+function eliminarProceso(){
+  if(estado.procesoSeleccionado===null) return mostrarMsg('msg-procesos','Selecciona un proceso primero.','err');
+  const proc=estado.procesos[estado.procesoSeleccionado];
+  estado.procesos.splice(estado.procesoSeleccionado,1);
+  limpiarFormProceso(); renderTablaProcs();
+  mostrarMsg('msg-procesos',`Proceso "${proc.nombre}" eliminado.`,'okm');
+}
+function renderTablaProcs(){
+  const tb=$('tbody-procesos'); $('badge-total').textContent=estado.procesos.length+' procesos';
+  if(estado.procesos.length===0){ tb.innerHTML='<tr><td colspan="6" class="emptymsg">Sin procesos registrados.</td></tr>'; actualizarProgreso(); return; }
+  tb.innerHTML=estado.procesos.map((p,i)=>`
+    <tr class="${i===estado.procesoSeleccionado?'sel':''}" onclick="seleccionarProceso(${i})" style="cursor:pointer">
+      <td class="mono">${p.id}</td><td><b>${p.nombre}</b></td><td><span class="badge listo">${p.estado}</span></td>
+      <td class="mono">${p.prioridad}</td><td class="mono">${p.cpu_time}</td><td class="mono">${p.memoria}</td>
+    </tr>`).join('');
+  actualizarProgreso();
+}
+function seleccionarProceso(i){
+  estado.procesoSeleccionado=i; const p=estado.procesos[i];
+  $('p-id').value=p.id; $('p-nombre').value=p.nombre; $('p-prioridad').value=p.prioridad;
+  $('p-cputime').value=p.cpu_time; $('p-memoria').value=p.memoria; renderTablaProcs();
+}
+
+function toggleQuantum(){ $('grupo-quantum').style.display = val('algoritmo-plan')==='RR' ? '' : 'none'; }
+function infoConfig(){
+  const tot=estado.procesos.reduce((s,p)=>s+p.memoria,0);
+  const pag=parseInt(val('so-paginas')), mar=parseInt(val('so-marcos'));
+  const el=$('so-req-label');
+  if(estado.procesos.length===0){ el.className='hint'; el.textContent='Agrega procesos en el paso 1.'; return; }
+  if(!isNaN(pag)&&!isNaN(mar)&&pag>=1&&mar>=1&&mar<pag&&pag>=tot){ el.className='hint okh'; el.textContent=`Configuración válida. Los procesos usan ${tot} páginas.`; }
+  else { el.className='hint'; el.textContent=`Los procesos usan ${tot} páginas. Marcos < páginas, y páginas ≥ ${tot}.`; }
+}
+
+function construirPayload(){
+  const alg_plan=val('algoritmo-plan')||'FCFS', quantum=val('quantum')||1;
+  const paginas=val('so-paginas'), marcos=val('so-marcos'), alg_mmu=val('so-algoritmo')||'FIFO';
+  let t=`alg_plan=${alg_plan}\nquantum=${quantum}\npaginas=${paginas}\nmarcos=${marcos}\nalg_mmu=${alg_mmu}\n`;
+  estado.procesos.forEach(p=>{ t+=`proc=${p.id};${p.nombre};${p.prioridad};${p.cpu_time};${p.memoria}\n`; });
+  return t;
+}
+function validarAntes(msgId){
+  if(estado.procesos.length===0){ mostrarMsg(msgId,'Agrega procesos en el paso 1.','err'); return false; }
+  if(!val('so-paginas')||!val('so-marcos')){ mostrarMsg(msgId,'Define páginas y marcos en el paso 3.','err'); return false; }
+  return true;
+}
+
+/* Emulación */
+let mmuData=null, frames=[], idx=0, timer=null;
+function pct(a,b){ return b?Math.round(a/b*100):0; }
+function badge(hit){ return `<span class="badge ${hit?'hit':'fault'}">${hit?'HIT':'FAULT'}</span>`; }
+function narrar(fr){
+  const p='página G'+fr.paginaGlobal;
+  if(fr.hit) return `se referencia la ${p}: ya estaba en memoria (marco M${fr.marcoAfectado}). Acierto.`;
+  if(fr.paginaReemplazada>=0) return `se referencia la ${p}: no estaba en memoria (fallo). Se expulsa la página G${fr.paginaReemplazada} y se carga la ${p} en el marco M${fr.marcoAfectado}.`;
+  return `se referencia la ${p}: no estaba en memoria (fallo). Hay un marco libre, se carga en M${fr.marcoAfectado}.`;
+}
+function renderMatriz(){
+  const t=$('matriz'); if(!frames.length){ t.innerHTML=''; return; }
+  const nM=frames[0].marcos.length;
+  let h='<tr><td class="rowhead">Ref.</td>';
+  frames.forEach((f,n)=>{ h+=`<td class="ref ${f.hit?'h':'f'} ${n===idx?'col-on':''}" onclick="render(${n})">${f.paginaGlobal}</td>`; });
+  h+='</tr>';
+  for(let m=0;m<nM;m++){
+    h+=`<tr><td class="rowhead">M${m}</td>`;
+    frames.forEach((f,n)=>{
+      const pg=f.marcos[m].idPagina, chg=(!f.hit && f.marcoAfectado===m);
+      h+=`<td class="${n===idx?'col-on ':''}${chg?'chg':''}">${pg<0?'<span class="vacia">·</span>':pg}</td>`;
+    });
+    h+='</tr>';
+  }
+  h+='<tr class="fila-fallo"><td class="rowhead">Fallo</td>';
+  frames.forEach((f,n)=>{ h+=`<td class="${n===idx?'col-on':''}">${f.hit?'·':'F'}</td>`; });
+  h+='</tr>';
+  t.innerHTML=h;
+}
+
+async function iniciarEmulacion(){
+  ocultarMsg('msg-emulacion');
+  if(!validarAntes('msg-emulacion')) return;
+  try{
+    estado.ultimoPayload=construirPayload();
+    const resp=await fetch('/api/simular',{method:'POST',body:estado.ultimoPayload});
+    const data=await resp.json();
+    if(data.error){ mostrarMsg('msg-emulacion',data.error,'err'); return; }
+    if(!data.frames||data.frames.length===0){ mostrarMsg('msg-emulacion','La simulación no produjo resultados.','err'); return; }
+    estado.ultimaSim=data; estado.comparado=false;
+    iniciarReproductor(data); renderCola(data.cola); actualizarProgreso();
+    mostrarMsg('msg-emulacion',`Simulación calculada: ${data.frames.length} referencias.`,'okm');
+  }catch(e){ mostrarMsg('msg-emulacion','No se pudo contactar al servidor.','err'); }
+}
+function renderCola(cola){
+  if(!cola) return; const tb=$('tbody-cola'); if(!tb) return;
+  tb.innerHTML=cola.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono">${c.id}</td><td><b>${c.nombre}</b></td><td class="mono">${c.cpu}</td><td class="mono">${c.prioridad}</td></tr>`).join('');
+  $('wrap-cola').style.display='';
+}
+async function iniciarEmulacionManual(){
+  ocultarMsg('msg-emulacion');
+  const crudo=val('manual-refs').trim();
+  const marcos=parseInt(val('manual-marcos'));
+  const alg=val('manual-alg')||'FIFO';
+  const nums=crudo.split(/[\s,;]+/).filter(x=>x!==''&&!isNaN(parseInt(x)));
+  if(nums.length===0) return mostrarMsg('msg-emulacion','Escribe la cadena de referencias.','err');
+  if(isNaN(marcos)||marcos<1) return mostrarMsg('msg-emulacion','Marcos debe ser mayor o igual a 1.','err');
+  const payload=`alg_mmu=${alg}\nmarcos=${marcos}\nrefs=${nums.join(';')}\n`;
+  estado.ultimoPayload=payload;
+  try{
+    const resp=await fetch('/api/simular',{method:'POST',body:payload});
+    const data=await resp.json();
+    if(data.error) return mostrarMsg('msg-emulacion',data.error,'err');
+    if(!data.frames||!data.frames.length) return mostrarMsg('msg-emulacion','Secuencia vacía.','err');
+    estado.ultimaSim=data; estado.comparado=false;
+    iniciarReproductor(data); $('wrap-cola').style.display='none'; actualizarProgreso();
+    const last=data.frames[data.frames.length-1];
+    mostrarMsg('msg-emulacion',`${alg}, ${marcos} marcos, ${data.frames.length} referencias: ${last.fallos} fallos, ${last.hits} hits.`,'okm');
+  }catch(e){ mostrarMsg('msg-emulacion','No se pudo contactar al servidor.','err'); }
+}
+function iniciarReproductor(data){
+  mmuData=data; frames=data.frames; idx=0;
+  if(timer){ clearInterval(timer); timer=null; $('play').textContent='Reproducir'; }
+  ['play','prev','next','slider'].forEach(id=>$(id).disabled=false);
+  $('slider').max=Math.max(frames.length-1,0);
+  render(0);
+}
+function render(i){
+  if(!frames.length) return;
+  idx=Math.max(0,Math.min(i,frames.length-1));
+  const fr=frames[idx], total=fr.hits+fr.fallos, ef=pct(fr.hits,total);
+  $('slider').value=idx;
+  $('side-alg').textContent=mmuData.config.algoritmo;
+  $('side-tick').textContent=fr.tick+'/'+fr.total;
+  $('side-eff').textContent=ef+'%';
+  $('narr').className='narr '+(fr.hit?'hit':'fault');
+  $('narr-badge').textContent=fr.hit?'HIT':'FALLO';
+  $('narr-txt').textContent='Tick '+fr.tick+' — '+narrar(fr);
+  $('st-proc').textContent=(fr.proceso.id<0?'':'P'+fr.proceso.id+' ')+fr.proceso.nombre;
+  $('st-page').textContent='V'+fr.paginaVirtual+' → G'+fr.paginaGlobal;
+  $('st-hit').textContent=fr.hits; $('st-fault').textContent=fr.fallos;
+  $('bar-hit').style.width=pct(fr.hits,total)+'%'; $('bar-fault').style.width=pct(fr.fallos,total)+'%';
+  $('summary').textContent=`Total ${total} referencias · Eficiencia ${ef}% · Marco afectado M${fr.marcoAfectado}`+(fr.paginaReemplazada>=0?` · Reemplazo de P${fr.paginaReemplazada}`:'');
+  $('frames').innerHTML=fr.marcos.map(m=>`
+    <div class="frame ${m.activo?'active':''} ${m.idPagina<0?'empty':''}">
+      <div class="num">Marco M${m.numero}</div><div class="page">${m.idPagina<0?'Libre':'P'+m.idPagina}</div>
+      <div>${m.idPagina<0?'Sin página':m.proceso}</div>
+      <div class="bits"><span>R:${m.r}</span><span>M:${m.m}</span><span>Uso:${m.ultimo}</span></div>
+    </div>`).join('');
+  $('pages').innerHTML=fr.paginas.map(p=>`
+    <tr class="${p.activa?'active':''}"><td class="mono">P${p.numero}</td><td>${p.proceso}</td><td class="mono">${p.paginaVirtual}</td>
+    <td class="mono">${p.marco>=0?'M'+p.marco:'—'}</td><td>${p.estado}</td><td class="mono">${p.r}</td><td class="mono">${p.m}</td></tr>`).join('');
+  renderMatriz();
+  $('processes').innerHTML=mmuData.procesos.map(p=>{
+    const usados=frames.slice(0,idx+1).filter(f=>f.proceso.id===p.id).length;
+    return `<div class="process"><b>P${p.id} ${p.nombre}</b><div class="bar"><span style="width:${pct(usados,p.cpu)}%"></span></div><span class="mono">${usados}/${Math.round(p.cpu)}</span></div>`;
+  }).join('');
+}
+function play(){
+  if(timer){ clearInterval(timer); timer=null; $('play').textContent='Reproducir'; return; }
+  if(idx>=frames.length-1) idx=0;
+  $('play').textContent='Pausar';
+  timer=setInterval(()=>{ if(idx>=frames.length-1){ play(); return; } render(idx+1); }, Number($('speed').value));
+}
+
+/* Reporte */
+async function compararAlgoritmos(){
+  ocultarMsg('msg-reporte');
+  let payload=estado.ultimoPayload;
+  if(!payload){ if(!validarAntes('msg-reporte')) return; payload=construirPayload(); }
+  try{
+    const resp=await fetch('/api/comparar',{method:'POST',body:payload});
+    const data=await resp.json();
+    if(data.error){ mostrarMsg('msg-reporte',data.error,'err'); return; }
+    renderComparativa(data.comparativa);
+    estado.comparado=true; actualizarProgreso();
+  }catch(e){ mostrarMsg('msg-reporte','No se pudo contactar al servidor.','err'); }
+}
+function renderComparativa(filas){
+  if(!filas||!filas.length) return;
+  const minF=Math.min(...filas.map(f=>f.fallos)), maxF=Math.max(...filas.map(f=>f.fallos));
+  const orden=[...filas].sort((a,b)=>a.fallos-b.fallos);
+  $('tbody-comparativa').innerHTML=filas.map(f=>{
+    const cls=f.fallos===minF?'fila-mejor':(f.fallos===maxF?'fila-peor':'');
+    const rank=orden.findIndex(o=>o.algoritmo===f.algoritmo)+1;
+    return `<tr class="${cls}"><td><b>${f.algoritmo}</b></td><td class="mono">${f.fallos}</td><td class="mono">${f.hits}</td>
+      <td class="mono">${f.tasaFallos}%</td><td class="mono">${f.eficiencia}%</td><td class="mono">#${rank}</td></tr>`;
+  }).join('');
+  $('card-comparativa').style.display=''; $('card-grafico').style.display='';
+  dibujarGrafico(filas);
+}
+function dibujarGrafico(filas){
+  const c=$('canvas-grafico'), ctx=c.getContext('2d');
+  const W=c.width, H=c.height; ctx.clearRect(0,0,W,H);
+  const pad=44, baseY=H-34, maxV=Math.max(...filas.map(f=>f.fallos),1);
+  const bw=(W-pad*2)/filas.length, minF=Math.min(...filas.map(f=>f.fallos));
+  ctx.font='13px Segoe UI,Arial'; ctx.textAlign='center';
+  filas.forEach((f,i)=>{
+    const x=pad+i*bw, h=(f.fallos/maxV)*(baseY-34);
+    ctx.fillStyle=f.fallos===minF?'#88a06d':'#a9805d';
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x+bw*0.18, baseY-h, bw*0.64, h, 6); ctx.fill(); }
+    else ctx.fillRect(x+bw*0.18, baseY-h, bw*0.64, h);
+    ctx.fillStyle='#433d35'; ctx.fillText(f.fallos, x+bw/2, baseY-h-7);
+    ctx.fillStyle='#8a8073'; ctx.fillText(f.algoritmo, x+bw/2, baseY+18);
+  });
+  ctx.strokeStyle='#e7ded1'; ctx.beginPath(); ctx.moveTo(pad,baseY); ctx.lineTo(W-pad,baseY); ctx.stroke();
+}
+function refrescarResumen(){
+  const d=estado.ultimaSim;
+  if(!d||!d.frames||!d.frames.length){ $('rep-alg').textContent='—'; $('rep-refs').textContent='0'; $('rep-hits').textContent='0'; $('rep-fallos').textContent='0'; $('rep-efic').className='hint'; $('rep-efic').textContent='Sin datos. Ejecuta una emulación primero.'; return; }
+  const last=d.frames[d.frames.length-1], total=last.hits+last.fallos;
+  $('rep-alg').textContent=d.config.algoritmo; $('rep-refs').textContent=total;
+  $('rep-hits').textContent=last.hits; $('rep-fallos').textContent=last.fallos;
+  $('rep-efic').className='hint okh'; $('rep-efic').textContent=`Eficiencia: ${pct(last.hits,total)}%`;
+}
+
+$('play').onclick=play;
+$('prev').onclick=()=>render(idx-1);
+$('next').onclick=()=>render(idx+1);
+$('slider').oninput=e=>render(Number(e.target.value));
+$('speed').oninput=e=>{ $('speedLabel').textContent=e.target.value+' ms'; if(timer){ play(); play(); } };
+$('speedLabel').textContent=$('speed').value+' ms';
+
+renderTablaProcs();
+actualizarProgreso();
+</script>
+</body>
+</html>

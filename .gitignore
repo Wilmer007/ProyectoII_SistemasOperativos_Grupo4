@@ -1,0 +1,17 @@
+# Binarios y objetos compilados
+*.exe
+*.o
+*.obj
+*.a
+*.out
+
+# Directorios de compilacion
+/build/
+/cmake-build-*/
+
+# Configuracion del IDE
+.idea/
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
