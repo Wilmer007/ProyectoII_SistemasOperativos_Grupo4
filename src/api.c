@@ -82,7 +82,7 @@ int parsearPayload(const char* payload, ConfigEntrada* cfg) {
 }
 
 /* ========================================================================
-   Task 3: seleccionarVictima (7 algoritmos)
+   Task 3: seleccionarVictima (6 algoritmos)
    ======================================================================== */
 
 /* Proxima posicion futura en que se referencia 'pagina' (INT_MAX si nunca). Para OPT. */
@@ -96,37 +96,72 @@ static int proximaReferencia(const int* seq, int total, int desde, int pagina) {
 int seleccionarVictima(const char* alg, MarcoSim* marcos, int n, int tick,
                        const int* seq, int totalSeq, int posActual, int* reloj) {
     (void)tick;
+    if (n <= 0) return 0;       /* defensa: validarConfig impide n=0 */
     if (strcmp(alg, "FIFO") == 0) {
         int v = 0, min = marcos[0].cargado_en;
         for (int i = 1; i < n; i++) if (marcos[i].cargado_en < min) { min = marcos[i].cargado_en; v = i; }
         return v;
     }
     if (strcmp(alg, "LRU") == 0) {
-        int v = 0, min = marcos[0].ultimo_uso;
-        for (int i = 1; i < n; i++) if (marcos[i].ultimo_uso < min) { min = marcos[i].ultimo_uso; v = i; }
-        return v;
-    }
-    if (strcmp(alg, "MRU") == 0) {
-        int v = 0, max = marcos[0].ultimo_uso;
-        for (int i = 1; i < n; i++) if (marcos[i].ultimo_uso > max) { max = marcos[i].ultimo_uso; v = i; }
-        return v;
-    }
-    if (strcmp(alg, "LFU") == 0) {
-        int v = 0, min = marcos[0].frecuencia;
-        for (int i = 1; i < n; i++) if (marcos[i].frecuencia < min) { min = marcos[i].frecuencia; v = i; }
-        return v;
-    }
-    if (strcmp(alg, "OPT") == 0) {
-        int v = 0, maxDist = -1;
-        for (int i = 0; i < n; i++) {
-            int d = proximaReferencia(seq, totalSeq, posActual, marcos[i].idPagina);
-            if (d == INT_MAX) return i;          /* no se vuelve a usar -> victima ideal */
-            if (d > maxDist) { maxDist = d; v = i; }
+        int v = 0;
+        for (int i = 1; i < n; i++) {
+            if (marcos[i].ultimo_uso < marcos[v].ultimo_uso ||
+                (marcos[i].ultimo_uso == marcos[v].ultimo_uso &&
+                 marcos[i].cargado_en < marcos[v].cargado_en)) {
+                v = i;        /* menor ultimo_uso; empate -> FIFO por cargado_en */
+            }
         }
         return v;
     }
-    if (strcmp(alg, "SC") == 0 || strcmp(alg, "CLOCK") == 0) {
-        /* Segunda oportunidad / reloj: avanzar puntero limpiando bitR hasta hallar bitR==0 */
+    if (strcmp(alg, "NRU") == 0) {
+        int v = 0, minClase = (marcos[0].bitR << 1) | marcos[0].bitM;
+        for (int i = 1; i < n; i++) {
+            int clase = (marcos[i].bitR << 1) | marcos[i].bitM;
+            if (clase < minClase ||
+                (clase == minClase && marcos[i].ultimo_uso < marcos[v].ultimo_uso)) {
+                minClase = clase;
+                v = i;
+            }
+        }
+        return v;
+    }
+    if (strcmp(alg, "OPT") == 0) {
+        int v = 0;
+        int maxDist = proximaReferencia(seq, totalSeq, posActual, marcos[0].idPagina);
+        for (int i = 1; i < n; i++) {
+            int d = proximaReferencia(seq, totalSeq, posActual, marcos[i].idPagina);
+            if (d > maxDist) {
+                maxDist = d; v = i;
+            } else if (d == maxDist && marcos[i].cargado_en < marcos[v].cargado_en) {
+                v = i;                            /* desempate FIFO: la mas antigua */
+            }
+        }
+        return v;
+    }
+    if (strcmp(alg, "SC") == 0) {
+        /* Second Chance: recorre los marcos en orden FIFO (cargado_en ascendente).
+           - Si la cabeza tiene R=0, esa es la victima.
+           - Si tiene R=1, se le da segunda oportunidad (R=0) y se revisa la siguiente.
+           Tras una pasada completa todas las R quedan en 0, asi que en la
+           segunda pasada se garantiza encontrar una victima sin tocar M. */
+        int orderIdx[MAX_MARCOS];
+        for (int i = 0; i < n; i++) orderIdx[i] = i;
+        for (int a = 0; a < n - 1; a++)
+            for (int b = 0; b < n - 1 - a; b++)
+                if (marcos[orderIdx[b]].cargado_en > marcos[orderIdx[b+1]].cargado_en) {
+                    int tmp = orderIdx[b]; orderIdx[b] = orderIdx[b+1]; orderIdx[b+1] = tmp;
+                }
+        for (int pass = 0; pass < 2; pass++) {
+            for (int j = 0; j < n; j++) {
+                int idx = orderIdx[j];
+                if (marcos[idx].bitR == 0) return idx;
+                marcos[idx].bitR = 0;     /* segunda oportunidad consumida */
+            }
+        }
+        return orderIdx[0];               /* salvaguarda inalcanzable */
+    }
+    if (strcmp(alg, "CLOCK") == 0) {
+        /* Reloj: avanzar puntero circular limpiando bitR hasta hallar bitR==0. */
         int idx = *reloj % n;
         for (int vueltas = 0; vueltas < 2 * n; vueltas++) {
             if (marcos[idx].bitR == 0) { *reloj = (idx + 1) % n; return idx; }
@@ -144,7 +179,7 @@ int seleccionarVictima(const char* alg, MarcoSim* marcos, int n, int tick,
    ======================================================================== */
 
 /* Construye la cola de ejecucion segun el algoritmo de planificacion. */
-static int generarCola(const ConfigEntrada* cfg, Proceso* cola, int maxCola) {
+static int generarCola(const ConfigEntrada* cfg, Proceso* cola, int* origen, int maxCola) {
     int n = 0;
     if (strcmp(cfg->algPlan, "RR") == 0) {
         int q = cfg->quantum < 1 ? 1 : cfg->quantum;
@@ -156,79 +191,139 @@ static int generarCola(const ConfigEntrada* cfg, Proceso* cola, int maxCola) {
             for (int i = 0; i < cfg->nProcs && n < maxCola; i++) {
                 if (restante[i] > 0) {
                     quedan = 1;
-                    cola[n++] = cfg->procs[i];
-                    restante[i] -= q;
+                    float turno = restante[i] < q ? restante[i] : (float)q;
+                    cola[n] = cfg->procs[i];
+                    cola[n].tiempoRestante = turno;
+                    if (origen) origen[n] = i;
+                    n++;
+                    restante[i] -= turno;
                 }
             }
         }
         return n;
     }
     /* copia base */
-    for (int i = 0; i < cfg->nProcs && i < maxCola; i++) cola[n++] = cfg->procs[i];
+    for (int i = 0; i < cfg->nProcs && i < maxCola; i++) {
+        cola[n] = cfg->procs[i];
+        cola[n].tiempoRestante = cfg->procs[i].tiempoCPU;
+        if (origen) origen[n] = i;
+        n++;
+    }
     /* ordenamientos */
     if (strcmp(cfg->algPlan, "SJF") == 0) {
         for (int i = 0; i < n - 1; i++)
             for (int j = 0; j < n - 1 - i; j++)
                 if (cola[j].tiempoCPU > cola[j+1].tiempoCPU) {
                     Proceso t = cola[j]; cola[j] = cola[j+1]; cola[j+1] = t;
+                    if (origen) { int oi = origen[j]; origen[j] = origen[j+1]; origen[j+1] = oi; }
                 }
     } else if (strcmp(cfg->algPlan, "PRIORIDAD") == 0) {
         for (int i = 0; i < n - 1; i++)
             for (int j = 0; j < n - 1 - i; j++)
                 if (cola[j].prioridad > cola[j+1].prioridad) {
                     Proceso t = cola[j]; cola[j] = cola[j+1]; cola[j+1] = t;
+                    if (origen) { int oi = origen[j]; origen[j] = origen[j+1]; origen[j+1] = oi; }
                 }
     }
     return n; /* FCFS = orden de insercion */
 }
 
-/* Mapea el id de proceso a su offset global de paginas (acumulado de paginas previas). */
-static int offsetProceso(const ConfigEntrada* cfg, int idProc) {
-    int off = 0;
+static int esPrimeraOcurrencia(const ConfigEntrada* cfg, int idx) {
+    for (int i = 0; i < idx; i++)
+        if (cfg->procs[i].id == cfg->procs[idx].id) return 0;
+    return 1;
+}
+
+static int indiceProcesoLogico(const ConfigEntrada* cfg, int idProc) {
+    for (int i = 0; i < cfg->nProcs; i++)
+        if (cfg->procs[i].id == idProc) return i;
+    return -1;
+}
+
+static int paginasProcesoLogico(const ConfigEntrada* cfg, int idProc) {
+    int paginas = 0;
+    for (int i = 0; i < cfg->nProcs; i++)
+        if (cfg->procs[i].id == idProc && cfg->procs[i].memoriaReq > paginas)
+            paginas = cfg->procs[i].memoriaReq;
+    return paginas < 1 ? 1 : paginas;
+}
+
+static int maxPaginasPorProceso(const ConfigEntrada* cfg) {
+    int mx = 1;
     for (int i = 0; i < cfg->nProcs; i++) {
-        if (cfg->procs[i].id == idProc) return off;
-        off += cfg->procs[i].memoriaReq;
+        if (!esPrimeraOcurrencia(cfg, i)) continue;
+        int pp = paginasProcesoLogico(cfg, cfg->procs[i].id);
+        if (pp > mx) mx = pp;
     }
-    return off;
+    return mx;
+}
+
+static int totalPaginasLogicas(const ConfigEntrada* cfg) {
+    int maxId = 0;
+    for (int i = 0; i < cfg->nProcs; i++)
+        if (esPrimeraOcurrencia(cfg, i) && cfg->procs[i].id > maxId)
+            maxId = cfg->procs[i].id;
+    return (maxId + 1) * maxPaginasPorProceso(cfg);
+}
+
+static int datosPaginaGlobal(const ConfigEntrada* cfg, int pagGlobal,
+                             int* idProc, int* pagVirt, const char** nombreProc) {
+    int pmax = maxPaginasPorProceso(cfg);
+    for (int i = 0; i < cfg->nProcs; i++) {
+        if (!esPrimeraOcurrencia(cfg, i)) continue;
+        int off  = cfg->procs[i].id * pmax;
+        int nPag = paginasProcesoLogico(cfg, cfg->procs[i].id);
+        if (pagGlobal >= off && pagGlobal < off + nPag) {
+            if (idProc) *idProc = cfg->procs[i].id;
+            if (pagVirt) *pagVirt = pagGlobal - off;
+            if (nombreProc) *nombreProc = cfg->procs[i].nombre;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Offset global del proceso: id * max_paginas_por_proceso.
+   Asi un proceso con id=N y 1 pagina ocupa la pagina global N,
+   igual que la tabla de referencias del ejemplo de clase. */
+static int offsetProceso(const ConfigEntrada* cfg, int idProc) {
+    return idProc * maxPaginasPorProceso(cfg);
 }
 
 int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
-                       Proceso* cola, int* nCola) {
-    srand(12345); /* reproducibilidad (gotcha del bit M) */
-
+                       Proceso* cola, int maxCola, int* nCola) {
     /* Secuencia de referencias (paginas globales). */
-    int  seq[MAX_PAGINAS * 8];
+    int  seq[MAX_FRAMES];
     int  total = 0;
     int  manual = (cfg->nSeqManual > 0);
+    int  capCola = maxCola;
+    if (capCola > MAX_COLA) capCola = MAX_COLA;
+    if (capCola < 0) capCola = 0;
 
     if (manual) {
         /* Modo manual: la secuencia viene dada tal cual */
-        for (int i = 0; i < cfg->nSeqManual && total < (int)(sizeof(seq)/sizeof(seq[0])); i++)
+        for (int i = 0; i < cfg->nSeqManual && total < MAX_FRAMES; i++)
             seq[total++] = cfg->seqManual[i];
         if (nCola) *nCola = 0;
     } else {
-        int nc = generarCola(cfg, cola, MAX_PROCS);
+        int origenCola[MAX_COLA];
+        int nc = generarCola(cfg, cola, origenCola, capCola);
         if (nCola) *nCola = nc;
 
         int paginaActual[MAX_PROCS];
-        int apar[MAX_PROCS];
-        for (int i = 0; i < MAX_PROCS; i++) { paginaActual[i] = 0; apar[i] = 0; }
+        for (int i = 0; i < MAX_PROCS; i++) paginaActual[i] = 0;
 
-        for (int i = 0; i < nc; i++)
-            for (int j = 0; j < cfg->nProcs; j++)
-                if (cola[i].id == cfg->procs[j].id) apar[j]++;
-
-        for (int i = 0; i < nc && total < (int)(sizeof(seq)/sizeof(seq[0])); i++) {
-            int pj = 0;
-            for (int j = 0; j < cfg->nProcs; j++) if (cfg->procs[j].id == cola[i].id) pj = j;
+        for (int i = 0; i < nc && total < MAX_FRAMES; i++) {
+            int pj = origenCola[i];
+            int logical = indiceProcesoLogico(cfg, cfg->procs[pj].id);
+            if (logical < 0) logical = pj;
             int N = cfg->procs[pj].memoriaReq; if (N < 1) N = 1;
-            int refsTotal = (int)(cfg->procs[pj].tiempoCPU + 0.5f);
-            int refsTurno = apar[pj] > 0 ? refsTotal / apar[pj] : refsTotal;
+            int refsTurno = (int)(cola[i].tiempoRestante + 0.5f);
             if (refsTurno < 1) refsTurno = 1;
             int off = offsetProceso(cfg, cola[i].id);
-            for (int r = 0; r < refsTurno && total < (int)(sizeof(seq)/sizeof(seq[0])); r++) {
-                seq[total++] = off + (paginaActual[pj] % N);
-                paginaActual[pj]++;
+            for (int r = 0; r < refsTurno && total < MAX_FRAMES; r++) {
+                seq[total++] = off + (paginaActual[logical] % N);
+                paginaActual[logical]++;
             }
         }
     }
@@ -260,16 +355,9 @@ int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
     for (int t = 0; t < total && nf < maxFrames; t++) {
         int pagGlobal = seq[t];
         /* que proceso/pagina virtual? */
-        int idProc = 0, pagVirt = 0, off = 0;
-        for (int i = 0; i < cfg->nProcs; i++) {
-            if (pagGlobal < off + cfg->procs[i].memoriaReq) {
-                idProc = cfg->procs[i].id; pagVirt = pagGlobal - off; break;
-            }
-            off += cfg->procs[i].memoriaReq;
-        }
+        int idProc = 0, pagVirt = 0;
         const char* nombreProc = "";
-        for (int i = 0; i < cfg->nProcs; i++)
-            if (cfg->procs[i].id == idProc) nombreProc = cfg->procs[i].nombre;
+        datosPaginaGlobal(cfg, pagGlobal, &idProc, &pagVirt, &nombreProc);
         if (manual) { idProc = -1; pagVirt = pagGlobal; nombreProc = "Manual"; }
 
         /* hit? */
@@ -277,7 +365,8 @@ int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
         for (int i = 0; i < nM; i++) if (m[i].idPagina == pagGlobal) {
             hit = 1; marcoAfectado = i;
             m[i].ultimo_uso = t; m[i].frecuencia++; m[i].bitR = 1;
-            if (rand() % 10 == 0) m[i].bitM = 1;
+            /* M no se toca: solo se enciende en operacion de escritura.
+               Sin info de read/write en el payload, todas son lecturas. */
             break;
         }
         if (hit) {
@@ -347,8 +436,10 @@ int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
             }
         } else {
             for (int i = 0; i < cfg->nProcs && pp < MAX_PAGINAS; i++) {
+                if (!esPrimeraOcurrencia(cfg, i)) continue;
                 int o = offsetProceso(cfg, cfg->procs[i].id);
-                for (int v = 0; v < cfg->procs[i].memoriaReq && pp < MAX_PAGINAS; v++) {
+                int nPag = paginasProcesoLogico(cfg, cfg->procs[i].id);
+                for (int v = 0; v < nPag && pp < MAX_PAGINAS; v++) {
                     PaginaSnap* ps = &f->paginas[pp++];
                     int gp = o + v;
                     ps->numero = gp; ps->idProceso = cfg->procs[i].id;
@@ -365,6 +456,13 @@ int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
             }
         }
         f->nPaginas = pp;
+
+        /* NRU: limpia el bit R cada nM referencias, DESPUES de procesar el tick.
+           El intervalo iguala la cantidad de marcos para que el envejecimiento
+           de R sea proporcional al tamano de la memoria fisica. M nunca se limpia. */
+        if (strcmp(cfg->algMMU, "NRU") == 0 && nM > 0 && ((t + 1) % nM) == 0) {
+            for (int i = 0; i < nM; i++) m[i].bitR = 0;
+        }
     }
     return nf;
 }
@@ -379,8 +477,18 @@ int validarConfig(const ConfigEntrada* cfg, char* errBuf, int errLen) {
         if (cfg->marcos < 1) { snprintf(errBuf, errLen, "Los marcos fisicos deben ser >= 1."); return 0; }
         return 1;
     }
-    int sumaPag = 0;
-    for (int i = 0; i < cfg->nProcs; i++) sumaPag += cfg->procs[i].memoriaReq;
+    for (int i = 0; i < cfg->nProcs; i++) {
+        for (int j = i + 1; j < cfg->nProcs; j++) {
+            if (cfg->procs[i].id == cfg->procs[j].id &&
+                strcmp(cfg->procs[i].nombre, cfg->procs[j].nombre) != 0) {
+                snprintf(errBuf, errLen,
+                         "El ID %d ya pertenece a %s. Reutiliza el mismo nombre para repetirlo.",
+                         cfg->procs[i].id, cfg->procs[i].nombre);
+                return 0;
+            }
+        }
+    }
+    int sumaPag = totalPaginasLogicas(cfg);
     if (cfg->nProcs < 1)
         { snprintf(errBuf, errLen, "Agrega al menos un proceso."); return 0; }
     if (cfg->paginas < 1)
@@ -391,7 +499,8 @@ int validarConfig(const ConfigEntrada* cfg, char* errBuf, int errLen) {
         { snprintf(errBuf, errLen, "Los marcos deben ser MENORES que las paginas virtuales."); return 0; }
     if (cfg->paginas < sumaPag)
         { snprintf(errBuf, errLen,
-            "Las paginas virtuales (%d) deben ser >= suma de paginas de procesos (%d).",
+            "Paginas virtuales insuficientes: tienes %d, se requieren al menos %d "
+            "(cada proceso de ID N ocupa la pagina global N).",
             cfg->paginas, sumaPag); return 0; }
     return 1;
 }
@@ -425,6 +534,16 @@ static void sbAddf(SB* s, const char* fmt, ...) {
     sbAdd(s, tmp);
 }
 
+static const char* nombreAlgoritmoMMU(const char* alg) {
+    if (strcmp(alg, "FIFO") == 0) return "FIFO — First In First Out";
+    if (strcmp(alg, "LRU") == 0) return "LRU — Least Recently Used";
+    if (strcmp(alg, "OPT") == 0) return "OPT — Óptimo";
+    if (strcmp(alg, "NRU") == 0) return "NRU — Not Recently Used";
+    if (strcmp(alg, "SC") == 0) return "Second Chance";
+    if (strcmp(alg, "CLOCK") == 0) return "Clock";
+    return alg;
+}
+
 char* apiSimular(const char* payload) {
     ConfigEntrada cfg;
     if (!parsearPayload(payload, &cfg)) return strdup("{\"error\":\"Payload invalido\"}");
@@ -434,27 +553,36 @@ char* apiSimular(const char* payload) {
         sbAddf(&s, "{\"error\":\"%s\"}", err);
         return s.buf;
     }
-    Frame* frames = malloc(sizeof(Frame) * (MAX_PAGINAS * 8));
+    Frame* frames = malloc(sizeof(Frame) * MAX_FRAMES);
     if (!frames) return strdup("{\"error\":\"Sin memoria\"}");
-    Proceso cola[MAX_PROCS]; int nCola = 0;
-    int nf = simularConRegistro(&cfg, frames, MAX_PAGINAS * 8, cola, &nCola);
+    Proceso cola[MAX_COLA]; int nCola = 0;
+    int nf = simularConRegistro(&cfg, frames, MAX_FRAMES, cola, MAX_COLA, &nCola);
 
     SB s; sbInit(&s);
     sbAddf(&s, "{\"config\":{\"algoritmo\":\"%s\",\"marcos\":%d,\"paginas\":%d,\"planificador\":\"%s\"},",
-           cfg.algMMU, cfg.marcos, cfg.paginas, cfg.algPlan);
+           nombreAlgoritmoMMU(cfg.algMMU), cfg.marcos, cfg.paginas, cfg.algPlan);
     /* procesos */
     sbAdd(&s, "\"procesos\":[");
-    for (int i = 0; i < cfg.nProcs; i++)
+    int escritos = 0;
+    for (int i = 0; i < cfg.nProcs; i++) {
+        if (!esPrimeraOcurrencia(&cfg, i)) continue;
+        float cpuTotal = 0.0f;
+        for (int j = 0; j < cfg.nProcs; j++)
+            if (cfg.procs[j].id == cfg.procs[i].id)
+                cpuTotal += cfg.procs[j].tiempoCPU;
         sbAddf(&s, "%s{\"id\":%d,\"nombre\":\"%s\",\"cpu\":%.0f,\"paginas\":%d}",
-               i ? "," : "", cfg.procs[i].id, cfg.procs[i].nombre,
-               cfg.procs[i].tiempoCPU, cfg.procs[i].memoriaReq);
+               escritos ? "," : "", cfg.procs[i].id, cfg.procs[i].nombre,
+               cpuTotal, paginasProcesoLogico(&cfg, cfg.procs[i].id));
+        escritos++;
+    }
     sbAdd(&s, "],");
     /* cola */
     sbAdd(&s, "\"cola\":[");
     for (int i = 0; i < nCola; i++)
         sbAddf(&s, "%s{\"id\":%d,\"nombre\":\"%s\",\"cpu\":%.0f,\"prioridad\":%d}",
                i ? "," : "", cola[i].id, cola[i].nombre,
-               cola[i].tiempoCPU, cola[i].prioridad);
+               cola[i].tiempoRestante > 0 ? cola[i].tiempoRestante : cola[i].tiempoCPU,
+               cola[i].prioridad);
     sbAdd(&s, "],");
     /* frames */
     sbAdd(&s, "\"frames\":[");
@@ -501,17 +629,17 @@ char* apiComparar(const char* payload) {
         sbAddf(&s, "{\"error\":\"%s\"}", err);
         return s.buf;
     }
-    const char* algs[7] = {"FIFO","LRU","OPT","SC","CLOCK","MRU","LFU"};
-    Frame* frames = malloc(sizeof(Frame) * (MAX_PAGINAS * 8));
+    const char* algs[6] = {"FIFO","LRU","OPT","NRU","SC","CLOCK"};
+    Frame* frames = malloc(sizeof(Frame) * MAX_FRAMES);
     if (!frames) return strdup("{\"error\":\"Sin memoria\"}");
-    Proceso cola[MAX_PROCS]; int nCola = 0;
+    Proceso cola[MAX_COLA]; int nCola = 0;
 
     SB s; sbInit(&s);
     sbAdd(&s, "{\"comparativa\":[");
-    for (int a = 0; a < 7; a++) {
+    for (int a = 0; a < 6; a++) {
         ConfigEntrada c = cfg;
         strncpy(c.algMMU, algs[a], sizeof(c.algMMU)-1);
-        int nf = simularConRegistro(&c, frames, MAX_PAGINAS * 8, cola, &nCola);
+        int nf = simularConRegistro(&c, frames, MAX_FRAMES, cola, MAX_COLA, &nCola);
         int h   = nf ? frames[nf-1].hits   : 0;
         int fl  = nf ? frames[nf-1].fallos : 0;
         int tot = h + fl;
@@ -519,7 +647,7 @@ char* apiComparar(const char* payload) {
         float tasaFallos = tot ? (100.0f * fl / tot) : 0.0f;
         sbAddf(&s, "%s{\"algoritmo\":\"%s\",\"hits\":%d,\"fallos\":%d,"
                    "\"tasaFallos\":%.1f,\"eficiencia\":%.1f}",
-               a ? "," : "", algs[a], h, fl, tasaFallos, efic);
+               a ? "," : "", nombreAlgoritmoMMU(algs[a]), h, fl, tasaFallos, efic);
     }
     sbAdd(&s, "]}");
     free(frames);

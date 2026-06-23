@@ -7,6 +7,8 @@
 #define MAX_PAGINAS   256
 #define MAX_PROCS     64
 #define MAX_SEQ       512
+#define MAX_FRAMES    (MAX_PAGINAS * 8)
+#define MAX_COLA      MAX_FRAMES
 
 // --- Snapshots por tick (calcan mmuData.frames[] de reporte_mmu.html) ---
 typedef struct {
@@ -38,7 +40,7 @@ typedef struct {
     int   quantum;
     int   paginas;       // paginas virtuales
     int   marcos;        // marcos fisicos
-    char  algMMU[16];    // FIFO / LRU / OPT / SC / CLOCK / MRU / LFU
+    char  algMMU[16];    // FIFO / LRU / OPT / NRU / SC / CLOCK
     Proceso procs[MAX_PROCS];
     int   nProcs;
     int   seqManual[MAX_SEQ];  // secuencia manual de referencias (nSeqManual>0 = usarla)
@@ -56,14 +58,14 @@ int parsearPayload(const char* payload, ConfigEntrada* cfg);
 // Valida reglas de negocio. Si invalida, escribe el motivo en errBuf y devuelve 0.
 int validarConfig(const ConfigEntrada* cfg, char* errBuf, int errLen);
 
-// Seleccion de victima de los 7 algoritmos de reemplazo.
+// Seleccion de victima de los 6 algoritmos de reemplazo.
 int seleccionarVictima(const char* alg, MarcoSim* marcos, int n, int tick,
                        const int* seq, int totalSeq, int posActual, int* reloj);
 
 // Corre planificador + MMU grabando cada tick. Devuelve nro de frames (<=maxFrames).
-// 'cola' / 'nCola' devuelven la cola de ejecucion para el JSON.
+// 'cola' / 'maxCola' / 'nCola' devuelven la cola de ejecucion para el JSON.
 int simularConRegistro(const ConfigEntrada* cfg, Frame* frames, int maxFrames,
-                       Proceso* cola, int* nCola);
+                       Proceso* cola, int maxCola, int* nCola);
 
 // Punto de entrada del endpoint POST /api/simular. Devuelve JSON malloc'd (liberar con free).
 char* apiSimular(const char* payload);

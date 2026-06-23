@@ -113,14 +113,20 @@
   .narr-txt{font-size:15px;line-height:1.45}
   .narr-meta{margin-left:auto;display:flex;gap:18px;font-size:13px;color:var(--muted);white-space:nowrap}
   .narr-meta b{color:var(--text);font-family:Consolas,monospace}
-  .matriz{border-collapse:collapse;font-size:13px;font-family:Consolas,monospace}
-  .matriz td,.matriz th{border:1px solid var(--border);padding:6px 10px;text-align:center;min-width:32px}
-  .matriz .rowhead{background:var(--card2);font-weight:700;text-align:left;color:var(--muted)}
-  .matriz .col-on{background:var(--accent-soft)}
-  .matriz .ref{font-weight:700;cursor:pointer} .matriz .ref.f{color:#a35f57} .matriz .ref.h{color:#5f7544}
-  .matriz td.chg{background:var(--accent-soft);font-weight:700;color:var(--accent-text)}
-  .matriz .fila-fallo td{color:#a35f57;font-weight:700}
-  .matriz .vacia{color:var(--faint)}
+  .matriz{display:grid;width:max-content;font-size:14px;font-family:Consolas,'JetBrains Mono',monospace;background:#fff;border-top:2px solid #4f463c;border-left:2px solid #4f463c}
+  .matriz .cell{height:36px;min-width:46px;border-right:2px solid #4f463c;border-bottom:2px solid #4f463c;display:grid;place-items:center;padding:0 8px;box-sizing:border-box;white-space:nowrap}
+  .matriz .label{position:sticky;left:0;z-index:2;justify-content:start;text-align:left;font-weight:800;min-width:104px}
+  .matriz .ref-head,.matriz .ref-cell{background:#fff35d;color:#29251f;font-weight:800}
+  .matriz .ref-cell{cursor:pointer}
+  .matriz .rowhead{background:#fffdfa;color:#433d35}
+  .matriz .fault-head,.matriz .fault-cell{background:#b9d89d;color:#29532f;font-weight:800}
+  .matriz .col-on{box-shadow:inset 0 0 0 3px rgba(169,128,93,.45)}
+  .matriz .ref-cell.f{color:#9c534b}.matriz .ref-cell.h{color:#315f2d}
+  .matriz .chg{background:#efe1d0;font-weight:800;color:#7a5838}
+  .matriz .hit-cell{background:#fbfff7}
+  .matriz .fault-cell.hit{color:transparent}
+  .matriz .fault-cell.fault{color:#1f6e2a}
+  .matriz .vacia{color:transparent}
   .timeline{display:flex;gap:5px;overflow:auto;padding:8px 0}
   .tick{min-width:30px;height:30px;border-radius:7px;background:#fff;border:1.5px solid var(--border);display:grid;place-items:center;font-size:12px;font-weight:600;flex:0 0 auto;cursor:pointer;transition:.12s}
   .tick:hover{transform:translateY(-2px)}
@@ -182,6 +188,11 @@
       <div class="card">
         <div class="card-title">Datos del proceso</div>
         <div class="grid-form">
+          <div class="fg"><label>ID existente</label>
+            <select id="p-existente" onchange="cambiarProcesoBase()">
+              <option value="">Nuevo proceso</option>
+            </select>
+          </div>
           <div class="fg"><label>ID</label><input type="number" id="p-id" min="1" placeholder="1" /></div>
           <div class="fg"><label>Nombre</label><input type="text" id="p-nombre" placeholder="ProcesoA" /></div>
           <div class="fg"><label>Prioridad</label><input type="number" id="p-prioridad" min="1" placeholder="1 = mayor" /></div>
@@ -192,6 +203,7 @@
           <button class="btn primary" onclick="agregarProceso()">Agregar proceso</button>
           <button class="btn ghost" onclick="editarProceso()">Editar selección</button>
           <button class="btn bad" onclick="eliminarProceso()">Eliminar selección</button>
+          <button class="btn bad" onclick="eliminarTodosProcesos()">Eliminar todo</button>
           <button class="btn ghost" onclick="limpiarFormProceso()">Limpiar</button>
         </div>
       </div>
@@ -200,7 +212,7 @@
         <div class="card-title">Lista de procesos</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Prioridad</th><th>CPU</th><th>Páginas</th></tr></thead>
+            <thead><tr><th>Llamada</th><th>ID</th><th>Nombre</th><th>Estado</th><th>Prioridad</th><th>CPU</th><th>Páginas</th></tr></thead>
             <tbody id="tbody-procesos"></tbody>
           </table>
         </div>
@@ -220,16 +232,16 @@
         <div class="card-title">Algoritmo de planificación</div>
         <div class="grid-form">
           <div class="fg"><label>Algoritmo</label>
-            <select id="algoritmo-plan" onchange="toggleQuantum()">
+            <select id="algoritmo-plan" onchange="planificadorCambiado()">
               <option value="FCFS">FCFS — First Come First Served</option>
               <option value="RR">Round Robin</option>
               <option value="SJF">SJF — Shortest Job First</option>
               <option value="PRIORIDAD">Por Prioridad</option>
             </select>
           </div>
-          <div class="fg" id="grupo-quantum" style="display:none"><label>Quantum (ticks)</label><input type="number" id="quantum" min="1" value="2" /></div>
+          <div class="fg" id="grupo-quantum" style="display:none"><label>Quantum (ticks)</label><input type="number" id="quantum" min="1" value="4" oninput="syncQuantum('plan');planificadorCambiado()" /></div>
         </div>
-        <span class="hint">La cola generada se mostrará tras iniciar la emulación.</span>
+        <span class="hint">La cola se ordena según el planificador seleccionado.</span>
         <div class="table-wrap" id="wrap-cola" style="display:none;margin-top:14px">
           <table>
             <thead><tr><th>Turno</th><th>ID</th><th>Nombre</th><th>CPU</th><th>Prioridad</th></tr></thead>
@@ -254,15 +266,15 @@
         <div class="grid-form">
           <div class="fg"><label>Páginas Virtuales</label><input type="number" id="so-paginas" min="1" placeholder="Total" oninput="actualizarProgreso();infoConfig()" /></div>
           <div class="fg"><label>Marcos Físicos</label><input type="number" id="so-marcos" min="1" placeholder="Menos que páginas" oninput="actualizarProgreso();infoConfig()" /></div>
+          <div class="fg"><label>Quantum (ticks)</label><input type="number" id="so-quantum" min="1" value="4" oninput="syncQuantum('so');planificadorCambiado();infoConfig()" /></div>
           <div class="fg"><label>Algoritmo MMU</label>
             <select id="so-algoritmo">
               <option value="FIFO">FIFO — First In First Out</option>
               <option value="LRU">LRU — Least Recently Used</option>
               <option value="OPT">OPT — Óptimo</option>
+              <option value="NRU">NRU — Not Recently Used</option>
               <option value="SC">Second Chance</option>
               <option value="CLOCK">Clock</option>
-              <option value="MRU">MRU — Most Recently Used</option>
-              <option value="LFU">LFU — Least Frequently Used</option>
             </select>
           </div>
         </div>
@@ -306,8 +318,12 @@
           <div class="fg"><label>Marcos</label><input type="number" id="manual-marcos" min="1" value="4" /></div>
           <div class="fg"><label>Algoritmo</label>
             <select id="manual-alg">
-              <option>FIFO</option><option selected>LRU</option><option>OPT</option>
-              <option>SC</option><option>CLOCK</option><option>MRU</option><option>LFU</option>
+              <option value="FIFO">FIFO — First In First Out</option>
+              <option value="LRU" selected>LRU — Least Recently Used</option>
+              <option value="OPT">OPT — Óptimo</option>
+              <option value="NRU">NRU — Not Recently Used</option>
+              <option value="SC">Second Chance</option>
+              <option value="CLOCK">Clock</option>
             </select>
           </div>
         </div>
@@ -322,8 +338,8 @@
       </div>
 
       <div class="card">
-        <div class="card-title">Matriz de reemplazo <span class="leg">columnas = referencias · celda resaltada = página cargada · clic para ir a ese paso</span></div>
-        <div style="overflow:auto"><table class="matriz" id="matriz"></table></div>
+        <div class="card-title">Matriz de reemplazo <span class="leg">referencias arriba · marcos por fila · fallos abajo</span></div>
+        <div style="overflow:auto"><div class="matriz" id="matriz"></div></div>
       </div>
 
       <div class="two">
@@ -367,7 +383,7 @@
       </div>
 
       <div class="btns" style="margin-bottom:20px">
-        <button class="btn primary" onclick="compararAlgoritmos()">Comparar los 7 algoritmos</button>
+        <button class="btn primary" onclick="compararAlgoritmos()">Comparar los 6 algoritmos</button>
       </div>
 
       <div class="card" id="card-comparativa" style="display:none">
@@ -391,7 +407,24 @@
 </div>
 
 <script>
-const estado = { procesos: [], procesoSeleccionado: null, ultimaSim: null, ultimoPayload: null, comparado: false };
+const procesosIniciales = [
+  {id:1,nombre:'Word',estado:'Listo',prioridad:2,cpu_time:1,memoria:1},
+  {id:2,nombre:'Excel',estado:'Listo',prioridad:3,cpu_time:1,memoria:1},
+  {id:3,nombre:'YouTube',estado:'Listo',prioridad:4,cpu_time:1,memoria:1},
+  {id:3,nombre:'YouTube',estado:'Listo',prioridad:4,cpu_time:1,memoria:1},
+  {id:5,nombre:'VSCode',estado:'Listo',prioridad:1,cpu_time:1,memoria:1},
+  {id:1,nombre:'Word',estado:'Listo',prioridad:2,cpu_time:1,memoria:1},
+  {id:2,nombre:'Excel',estado:'Listo',prioridad:3,cpu_time:1,memoria:1},
+  {id:2,nombre:'Excel',estado:'Listo',prioridad:3,cpu_time:1,memoria:1},
+  {id:6,nombre:'Chrome',estado:'Listo',prioridad:2,cpu_time:1,memoria:1},
+  {id:2,nombre:'Excel',estado:'Listo',prioridad:3,cpu_time:1,memoria:1},
+  {id:1,nombre:'Word',estado:'Listo',prioridad:2,cpu_time:1,memoria:1},
+  {id:5,nombre:'VSCode',estado:'Listo',prioridad:1,cpu_time:1,memoria:1},
+  {id:7,nombre:'Spotify',estado:'Listo',prioridad:4,cpu_time:1,memoria:1},
+  {id:6,nombre:'Chrome',estado:'Listo',prioridad:2,cpu_time:1,memoria:1},
+  {id:3,nombre:'YouTube',estado:'Listo',prioridad:4,cpu_time:1,memoria:1}
+];
+const estado = { procesos: procesosIniciales.map(p=>({...p})), procesoSeleccionado: null, ultimaSim: null, ultimoPayload: null, comparado: false };
 const $ = id => document.getElementById(id);
 function val(id){ return $(id) ? $(id).value : ''; }
 
@@ -400,6 +433,7 @@ function navegarA(modulo){
   document.querySelectorAll('.step').forEach(b=>b.classList.remove('activo'));
   const pan=$('panel-'+modulo); if(pan) pan.classList.add('activo');
   const nb=$('nav-'+modulo); if(nb) nb.classList.add('activo');
+  if(modulo==='planificador') renderColaPlanificador();
   if(modulo==='configso') infoConfig();
   if(modulo==='reporte') refrescarResumen();
   actualizarProgreso();
@@ -413,7 +447,7 @@ function irSiguiente(actual){
 }
 function pasosCompletos(){
   const pag=parseInt(val('so-paginas')), mar=parseInt(val('so-marcos'));
-  const sumaPag=estado.procesos.reduce((s,p)=>s+p.memoria,0);
+  const sumaPag=paginasLogicas();
   return {
     procesos: estado.procesos.length>=1,
     planificador: estado.procesos.length>=1,
@@ -438,35 +472,86 @@ function mostrarMsg(id,txt,tipo){ const e=$(id); if(!e)return; e.textContent=txt
 function ocultarMsg(id){ const e=$(id); if(e) e.className='msg'; }
 
 /* Procesos */
+function procesosLogicos(){
+  const map=new Map();
+  estado.procesos.forEach(p=>{
+    if(!map.has(p.id)) map.set(p.id,{id:p.id,nombre:p.nombre,paginas:p.memoria,cpu:0,llamadas:0});
+    const item=map.get(p.id);
+    item.paginas=Math.max(item.paginas,p.memoria);
+    item.cpu+=p.cpu_time;
+    item.llamadas++;
+  });
+  return [...map.values()];
+}
+function paginasLogicas(){ return procesosLogicos().reduce((s,p)=>s+p.paginas,0); }
+function procesoBasePorId(id){ return estado.procesos.find(p=>p.id===id) || null; }
+function ultimaAparicionPorId(id){
+  for(let i=estado.procesos.length-1;i>=0;i--) if(estado.procesos[i].id===id) return estado.procesos[i];
+  return null;
+}
+function bloquearIdentidad(bloquear){
+  $('p-id').readOnly=bloquear;
+  $('p-nombre').readOnly=bloquear;
+}
+function renderSelectorProcesos(){
+  const sel=$('p-existente'); if(!sel) return;
+  const actual=sel.value;
+  const opts=['<option value="">Nuevo proceso</option>'];
+  procesosLogicos().forEach(p=>opts.push(`<option value="${p.id}">P${p.id} - ${p.nombre}</option>`));
+  sel.innerHTML=opts.join('');
+  if([...sel.options].some(o=>o.value===actual)) sel.value=actual;
+}
+function cambiarProcesoBase(){
+  const id=parseInt(val('p-existente'));
+  if(isNaN(id)){
+    bloquearIdentidad(false);
+    $('p-id').value=''; $('p-nombre').value='';
+    return;
+  }
+  const base=procesoBasePorId(id), ultima=ultimaAparicionPorId(id) || base;
+  if(!base) return;
+  $('p-id').value=base.id; $('p-nombre').value=base.nombre;
+  $('p-prioridad').value=ultima.prioridad; $('p-cputime').value=ultima.cpu_time; $('p-memoria').value=ultima.memoria;
+  bloquearIdentidad(true);
+}
 function limpiarFormProceso(){
-  ['p-id','p-nombre','p-prioridad','p-cputime','p-memoria'].forEach(id=>{ if($(id)) $(id).value=''; });
+  ['p-existente','p-id','p-nombre','p-prioridad','p-cputime','p-memoria'].forEach(id=>{ if($(id)) $(id).value=''; });
+  bloquearIdentidad(false);
   estado.procesoSeleccionado=null; ocultarMsg('msg-procesos');
 }
+function invalidarSimulacion(){
+  estado.ultimaSim=null; estado.ultimoPayload=null; estado.comparado=false;
+  if($('wrap-cola')) $('wrap-cola').style.display='none';
+}
 function agregarProceso(){
-  const id=parseInt(val('p-id')), nombre=val('p-nombre').trim();
+  const id=parseInt(val('p-id'));
+  const base=procesoBasePorId(id);
+  const nombre=(base?base.nombre:val('p-nombre').trim());
   const prioridad=parseInt(val('p-prioridad')), cputime=parseInt(val('p-cputime')), memoria=parseInt(val('p-memoria'));
   if(!nombre) return mostrarMsg('msg-procesos','El nombre no puede estar vacío.','err');
   if(/[;\n]/.test(nombre)) return mostrarMsg('msg-procesos','El nombre no puede contener ; ni saltos de línea.','err');
   if(isNaN(id)||id<1) return mostrarMsg('msg-procesos','El ID debe ser un número mayor a 0.','err');
-  if(estado.procesos.find(p=>p.id===id)) return mostrarMsg('msg-procesos','Ya existe un proceso con ese ID.','err');
   if(isNaN(prioridad)||prioridad<1) return mostrarMsg('msg-procesos','La prioridad debe ser mayor o igual a 1.','err');
   if(isNaN(cputime)||cputime<1) return mostrarMsg('msg-procesos','El CPU Time debe ser mayor o igual a 1.','err');
   if(isNaN(memoria)||memoria<1) return mostrarMsg('msg-procesos','Las páginas deben ser mayor o igual a 1.','err');
   estado.procesos.push({id,nombre,estado:'Listo',prioridad,cpu_time:cputime,memoria});
+  invalidarSimulacion();
   limpiarFormProceso(); renderTablaProcs();
-  mostrarMsg('msg-procesos',`Proceso "${nombre}" agregado.`,'okm');
+  mostrarMsg('msg-procesos',base?`Nueva llamada de P${id} "${nombre}" agregada.`:`Proceso "${nombre}" agregado.`,'okm');
 }
 function editarProceso(){
   if(estado.procesoSeleccionado===null) return mostrarMsg('msg-procesos','Selecciona un proceso en la tabla.','err');
   const idx=estado.procesoSeleccionado;
-  const id=parseInt(val('p-id')), nombre=val('p-nombre').trim();
+  const id=parseInt(val('p-id'));
+  const base=procesoBasePorId(id);
+  const nombre=(base&&base!==estado.procesos[idx])?base.nombre:val('p-nombre').trim();
   const prioridad=parseInt(val('p-prioridad')), cputime=parseInt(val('p-cputime')), memoria=parseInt(val('p-memoria'));
   if(!nombre||/[;\n]/.test(nombre)) return mostrarMsg('msg-procesos','Nombre inválido (sin ; ni saltos de línea).','err');
   if(isNaN(id)||id<1) return mostrarMsg('msg-procesos','ID inválido.','err');
-  if(estado.procesos.find((p,i)=>p.id===id&&i!==idx)) return mostrarMsg('msg-procesos','Ese ID ya pertenece a otro proceso.','err');
   if(isNaN(prioridad)||prioridad<1||isNaN(cputime)||cputime<1||isNaN(memoria)||memoria<1)
     return mostrarMsg('msg-procesos','Prioridad, CPU y páginas deben ser mayor o igual a 1.','err');
   Object.assign(estado.procesos[idx],{id,nombre,prioridad,cpu_time:cputime,memoria});
+  invalidarSimulacion();
   limpiarFormProceso(); renderTablaProcs();
   mostrarMsg('msg-procesos',`Proceso "${nombre}" actualizado.`,'okm');
 }
@@ -474,28 +559,87 @@ function eliminarProceso(){
   if(estado.procesoSeleccionado===null) return mostrarMsg('msg-procesos','Selecciona un proceso primero.','err');
   const proc=estado.procesos[estado.procesoSeleccionado];
   estado.procesos.splice(estado.procesoSeleccionado,1);
+  invalidarSimulacion();
   limpiarFormProceso(); renderTablaProcs();
   mostrarMsg('msg-procesos',`Proceso "${proc.nombre}" eliminado.`,'okm');
 }
+function eliminarTodosProcesos(){
+  estado.procesos=[];
+  invalidarSimulacion();
+  limpiarFormProceso(); renderTablaProcs(); actualizarProgreso();
+  mostrarMsg('msg-procesos','Lista de procesos eliminada.','okm');
+}
 function renderTablaProcs(){
-  const tb=$('tbody-procesos'); $('badge-total').textContent=estado.procesos.length+' procesos';
-  if(estado.procesos.length===0){ tb.innerHTML='<tr><td colspan="6" class="emptymsg">Sin procesos registrados.</td></tr>'; actualizarProgreso(); return; }
+  const tb=$('tbody-procesos'), logicos=procesosLogicos();
+  $('badge-total').textContent=estado.procesos.length+' llamadas / '+logicos.length+' procesos';
+  renderSelectorProcesos();
+  if(estado.procesos.length===0){ tb.innerHTML='<tr><td colspan="7" class="emptymsg">Sin procesos registrados.</td></tr>'; actualizarProgreso(); return; }
   tb.innerHTML=estado.procesos.map((p,i)=>`
     <tr class="${i===estado.procesoSeleccionado?'sel':''}" onclick="seleccionarProceso(${i})" style="cursor:pointer">
-      <td class="mono">${p.id}</td><td><b>${p.nombre}</b></td><td><span class="badge listo">${p.estado}</span></td>
+      <td class="mono">${i+1}</td><td class="mono">${p.id}</td><td><b>${p.nombre}</b></td><td><span class="badge listo">${p.estado}</span></td>
       <td class="mono">${p.prioridad}</td><td class="mono">${p.cpu_time}</td><td class="mono">${p.memoria}</td>
     </tr>`).join('');
+  renderColaPlanificador();
   actualizarProgreso();
 }
 function seleccionarProceso(i){
   estado.procesoSeleccionado=i; const p=estado.procesos[i];
+  $('p-existente').value=String(p.id);
   $('p-id').value=p.id; $('p-nombre').value=p.nombre; $('p-prioridad').value=p.prioridad;
-  $('p-cputime').value=p.cpu_time; $('p-memoria').value=p.memoria; renderTablaProcs();
+  $('p-cputime').value=p.cpu_time; $('p-memoria').value=p.memoria; bloquearIdentidad(true); renderTablaProcs();
 }
 
+function quantumActual(){ return Math.max(1,parseInt(val('so-quantum')||val('quantum'))||1); }
+function syncQuantum(origen){
+  const src=origen==='so'?'so-quantum':'quantum';
+  const dst=origen==='so'?'quantum':'so-quantum';
+  if($(src)&&$(dst)) $(dst).value=Math.max(1,parseInt(val(src))||1);
+}
 function toggleQuantum(){ $('grupo-quantum').style.display = val('algoritmo-plan')==='RR' ? '' : 'none'; }
+function generarColaPlanificador(){
+  const alg=val('algoritmo-plan')||'FCFS';
+  const base=estado.procesos.map((p,i)=>({...p,orden:i,cpu_turno:p.cpu_time}));
+  if(alg==='RR'){
+    const q=quantumActual();
+    const restante=base.map(p=>p.cpu_time);
+    const cola=[];
+    let quedan=true, guard=0;
+    while(quedan && guard<10000){
+      quedan=false; guard++;
+      base.forEach((p,i)=>{
+        if(restante[i]>0){
+          quedan=true;
+          const turno=Math.min(restante[i],q);
+          cola.push({...p,cpu_turno:turno});
+          restante[i]-=q;
+        }
+      });
+    }
+    return cola;
+  }
+  if(alg==='SJF') return base.sort((a,b)=>(a.cpu_time-b.cpu_time)||(a.orden-b.orden));
+  if(alg==='PRIORIDAD') return base.sort((a,b)=>(a.prioridad-b.prioridad)||(a.orden-b.orden));
+  return base;
+}
+function renderColaPlanificador(){
+  const tb=$('tbody-cola'); if(!tb) return;
+  const cola=generarColaPlanificador();
+  if(!cola.length){
+    tb.innerHTML='<tr><td colspan="5" class="emptymsg">Sin procesos registrados.</td></tr>';
+    $('wrap-cola').style.display='';
+    return;
+  }
+  tb.innerHTML=cola.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono">${c.id}</td><td><b>${c.nombre}</b></td><td class="mono">${c.cpu_turno}</td><td class="mono">${c.prioridad}</td></tr>`).join('');
+  $('wrap-cola').style.display='';
+}
+function planificadorCambiado(){
+  toggleQuantum();
+  invalidarSimulacion();
+  renderColaPlanificador();
+  actualizarProgreso();
+}
 function infoConfig(){
-  const tot=estado.procesos.reduce((s,p)=>s+p.memoria,0);
+  const tot=paginasLogicas();
   const pag=parseInt(val('so-paginas')), mar=parseInt(val('so-marcos'));
   const el=$('so-req-label');
   if(estado.procesos.length===0){ el.className='hint'; el.textContent='Agrega procesos en el paso 1.'; return; }
@@ -504,7 +648,7 @@ function infoConfig(){
 }
 
 function construirPayload(){
-  const alg_plan=val('algoritmo-plan')||'FCFS', quantum=val('quantum')||1;
+  const alg_plan=val('algoritmo-plan')||'FCFS', quantum=quantumActual();
   const paginas=val('so-paginas'), marcos=val('so-marcos'), alg_mmu=val('so-algoritmo')||'FIFO';
   let t=`alg_plan=${alg_plan}\nquantum=${quantum}\npaginas=${paginas}\nmarcos=${marcos}\nalg_mmu=${alg_mmu}\n`;
   estado.procesos.forEach(p=>{ t+=`proc=${p.id};${p.nombre};${p.prioridad};${p.cpu_time};${p.memoria}\n`; });
@@ -545,6 +689,29 @@ function renderMatriz(){
   h+='</tr>';
   t.innerHTML=h;
 }
+
+renderMatriz = function(){
+  const t=$('matriz'); if(!frames.length){ t.innerHTML=''; return; }
+  const nM=frames[0].marcos.length;
+  t.style.gridTemplateColumns=`104px repeat(${frames.length}, 46px)`;
+  const cells=[];
+  cells.push('<div class="cell ref-head label">REFERENCIA</div>');
+  frames.forEach((f,n)=>{
+    const proc=f.proceso.id<0?f.proceso.nombre:`P${f.proceso.id} ${f.proceso.nombre}`;
+    cells.push(`<div class="cell ref-cell ${f.hit?'h':'f'} ${n===idx?'col-on':''}" onclick="render(${n})" title="Tick ${f.tick}: ${proc}, pagina G${f.paginaGlobal}">${f.paginaGlobal}</div>`);
+  });
+  for(let m=0;m<nM;m++){
+    cells.push(`<div class="cell rowhead label">MARCO ${m+1}</div>`);
+    frames.forEach((f,n)=>{
+      const pg=f.marcos[m].idPagina, chg=(!f.hit && f.marcoAfectado===m);
+      const cls=[n===idx?'col-on':'',chg?'chg':'',f.hit?'hit-cell':''].filter(Boolean).join(' ');
+      cells.push(`<div class="cell ${cls}" title="Tick ${f.tick}, marco ${m+1}">${pg<0?'<span class="vacia">.</span>':pg}</div>`);
+    });
+  }
+  cells.push('<div class="cell fault-head label">FALLOS</div>');
+  frames.forEach((f,n)=>{ cells.push(`<div class="cell fault-cell ${f.hit?'hit':'fault'} ${n===idx?'col-on':''}">${f.hit?'.':'F'}</div>`); });
+  t.innerHTML=cells.join('');
+};
 
 async function iniciarEmulacion(){
   ocultarMsg('msg-emulacion');
